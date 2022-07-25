@@ -68,18 +68,18 @@ $$ \min_{\mathbf{x} \geq 0, \theta_i, \Delta_i, \mathbf{\Delta}_i, a_i, b_i} \; 
 - it is defined for floating point pixel coordinates ($I(r)$ exists for all r, not just $r \in 0,1,2,...,W-1$)
 - it is a (sub)-differentiable function of the pixel coordinates
 
-It is helpful to define images as continuous and differentiable functions $\mathbb{R}^2arrow\mathbb{R}$. Suppose we are given an image $I$ with pixel values defined on a square grid
+It is helpful to define images as continuous and differentiable functions $\mathbb{R}^2\rightarrow\mathbb{R}$. Suppose we are given an image $I$ with pixel values defined on a square grid
 
 Define $I$ as an image. To return the image intensity at pixel location $\mathbf{r} \in \mathbb{R}^2$, we evaluate $I_C(r) = (r-\lfloor r\rfloor) I(\lfloor r\rfloor) + (r-\lfloor r\rceil) I(\lceil r\rceil)$
 
 operators on continuous images. To convert the theory into code, we just bilinearly interpolate images, with the known image values defined on a grid starting at (0.5,0.5). I use a non-standard method to interpolate beyond the borders of the image (that is, when "interpolating" at locations outside the bounding box described by (0.5,0.5) to (img.shape[0]-0.5, img.shape[1]-0.5)) which is described in the docs.
 
-Define $X$ as the volume we wish to solve for. It can be regarded as a continuous function: $\mathbb{R}^3arrow\mathbb{R}$. $X(\mathbf{r})$ is defined as 0 for all $\mathbf{r}$ outside the bounding box of $X$.
+Define $X$ as the volume we wish to solve for. It can be regarded as a continuous function: $\mathbb{R}^3\rightarrow\mathbb{R}$. $X(\mathbf{r})$ is defined as 0 for all $\mathbf{r}$ outside the bounding box of $X$.
 
 Define $\mathbf{P}_{\theta}$ is the operator which takes in a volume $X$ and its orientation $\theta=\langle \alpha,\beta,\gamma\rangle$ and returns a projection of the data.
 
 $T(u)$ is a matrix which warps an image according to the field $\mathbf{u}$. Specifically:
-$T(\mathbf{u}) \; \mathbf{r}: \mathbf{r} arrow \mathbf{r} + \mathbf{u}$
+$T(\mathbf{u}) \; \mathbf{r}: \mathbf{r} \rightarrow \mathbf{r} + \mathbf{u}$
 $T(\mathbf{u}) \; \mathbf{x} (\mathbf{r}) =  \mathbf{x}(\mathbf{r} + \mathbf{u})$
 
 Interestingly, $P$ and $T$ are linear operators applied to the matrix $x$ if we use linear interpolation schemes. They are nonlinear functions of orientation $\theta$ and generalized displacement fields $u$.
