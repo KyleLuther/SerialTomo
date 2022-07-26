@@ -6,14 +6,16 @@ import numpy as np
 
 def project(vol: '(D,H,W) array', orientation=(0.0,0.0,0.0), rotation_center=None,
             voxel_size=(1.0,1.0,1.0), ccd_size=None, ray_oversample=(1,1,1)):
-    """ Compute a forward projection via ray tracing 
+    """ Compute a forward projection via ray tracing. 
+    
+    Refer to docs for detailed specification of geometry and implementation notes
     
     Args
     ----------
     vol : (D,H,W) array
         volume of densities to project to ccd grid
         
-    orientation : rotation angles (alpha,beta,gamma) in degrees
+    orientation : counterclockwise rotation angles (alpha,beta,gamma) in degrees.
         alpha : rotation around specimen's y-axis ("tilt angle")
         beta : rotation around specimen's z-axis ("tilt rotation")
         gamma : rotation around specimen's x-axis ("beam tilt")
@@ -59,11 +61,11 @@ def project(vol: '(D,H,W) array', orientation=(0.0,0.0,0.0), rotation_center=Non
         rotation_center = tuple(s/2 for s in vol.shape)
     if ccd_size is None:
         ccd_size = (int(np.ceil(vol.shape[1]*voxel_size[1])),int(np.ceil(vol.shape[2]*voxel_size[2])))
-
+        
     # 1: compute ray start & end points in detector (v,u) coordinate frame
     v = jnp.linspace(0.5/ray_oversample[1], ccd_size[0]-0.5/ray_oversample[1], ccd_size[0]*ray_oversample[1])
     u = jnp.linspace(0.5/ray_oversample[2], ccd_size[1]-0.5/ray_oversample[2], ccd_size[1]*ray_oversample[2])
-    u,v = jnp.meshgrid(v,u)
+    u,v = jnp.meshgrid(u,v)
     start_z = jnp.zeros_like(v) + 0.5/ray_oversample[0]
     end_z = vol.shape[0]*jnp.ones_like(v)-0.5/ray_oversample[0]
 
@@ -108,7 +110,7 @@ def project(vol: '(D,H,W) array', orientation=(0.0,0.0,0.0), rotation_center=Non
 
     starts_zyx = jnp.stack([start_z,starts_wyx[...,1],starts_wyx[...,2]],axis=-1)
     ends_zyx = jnp.stack([end_z,ends_wyx[...,1],ends_wyx[...,2]],axis=-1)
-
+    
     # 3: create points along ray (qd x ph x pw x 3)
     rays_zyx = ends_zyx-starts_zyx
     ray_lens = jnp.linalg.norm(rays_zyx,axis=-1)
