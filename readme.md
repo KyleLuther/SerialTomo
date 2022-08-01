@@ -1,6 +1,6 @@
 Tomography with Jax 
 ### High level goal
-To make the best EM serial section tomogram anyone has ever seen. We'll acheive this by treating factors such as distortions, illumination times, rotations, shifts as latent variables which we can optimize over to reconstruct the volume. This can be seen as taking [this 2013 paper](https://link.springer.com/chapter/10.1007/978-3-642-38886-6_46) to the extreme. I also see room for improvement via improved interpolation and ray-casting schemes.
+To make the best EM serial section tomogram anyone has ever seen. We'll acheive this by treating factors such as distortions, illumination times, rotations, shifts as latent variables which we can optimize over to reconstruct the volume. This can be seen as 1) fixing a bug in [this 2013 paper](https://link.springer.com/chapter/10.1007/978-3-642-38886-6_46) caused by discontinuities in their integration and 2) taking their method to the extreme (they only treat shifts and one of the 3 tilt angles as a latent variable). I also see room for improvement via improved interpolation and ray-casting schemes.
 <!-- 5 improvements
 --------------
 - solve for sample warping
@@ -73,7 +73,7 @@ $$ \min_{\mathbf{x} \geq 0, \theta_i, \Delta_i, \mathbf{\Delta}_i, a_i, b_i} \; 
 - **mean preserving linear interpolation**
 - **NERF (neural interpolation)**
 
-
+<!-- 
 *Differentiable images via linear interpolation of finite-resolution images* Basically all I'm going to do is define linear interpolation. Everything is easier if we work with images that satify three properties: 
 - it is defined by a finite number of parameters (a regular image satisfies this. # params = # pixels)
 - it is defined for floating point pixel coordinates ($I(r)$ exists for all r, not just $r \in 0,1,2,...,W-1$)
@@ -106,3 +106,4 @@ $$ \min_{\mathbf{x}, \theta_i, u_i} \; \sum_{i=1}^N \sum_{v=1}^H \sum_{u=1}^W  \
 
 ### Implemented so far
  - ```project``` Forward projection $P_{\theta} \circ \mathbf{x}$ for arbitrary volume orientations and voxel/ccd geometries, with trilinear interpolation and overcomplete ray sampling.
+ -->
