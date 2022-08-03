@@ -48,7 +48,7 @@ def integrate_z(img, z_min, z_max, n_points):
 
 # simulate propagation through a volume with lens warping
 def forward(vol: "f: R^3 -> R", disp: "f: R^2 -> R^2", vol_size: "(D,H,W)", ccd_size: "(H,W)",
-            orientation: "(theta_z,theta_y,theta_x)", energy=1.0, oversample=(1,1,1)):
+            orientation: "(theta_z,theta_y,theta_x)", exposure=1.0, oversample=(1,1,1)):
     """ Simulate electron transmission and image acquisition through 3d volume
     
     Refer to docs for detailed specification of geometry and implementation notes
@@ -118,7 +118,7 @@ def forward(vol: "f: R^3 -> R", disp: "f: R^2 -> R^2", vol_size: "(D,H,W)", ccd_
 
     # integrate vol in the vertical direction and exponentiate
     proj = integrate_z(rotated, z_min, z_max, n_points=int(oversample[0]*vol_size[0]))
-    exp = lambda r: energy * jnp.exp(-proj(r))
+    exp = lambda r: exposure * jnp.exp(-proj(r))
 
     # warp the projection
     warped = lambda r: exp(r - disp(r+jnp.array(ccd_size)/2))
