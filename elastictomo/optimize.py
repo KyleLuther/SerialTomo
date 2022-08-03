@@ -10,7 +10,7 @@ def elastic_regularization(dsp_grid):
     
     return (dx**2).sum() + (dy**2).sum()
 
-def loss(vol_grid, dsp_grids, thetas, energies, lam, tilts, masks):
+def loss(vol_grid, dsp_grids, thetas, exposures, lam, tilts, masks):
     """ Computes total loss: \sum_i (pred_i-proj_i)^2 + lam * reg_i """
     # logging
     info = {}
@@ -27,7 +27,7 @@ def loss(vol_grid, dsp_grids, thetas, energies, lam, tilts, masks):
     loss = 0.0
     for i in range(len(projs)):
         pred = forward(vol, dsps[i], vol_size, ccd_size,
-                       orientation=thetas[i], energy=energies[i], oversample=(1,1,1))
+                       orientation=thetas[i], exposure=exposures[i], oversample=(1,1,1))
 
         mse = ((1-masks[i])*(pred-tilts[i])**2).sum()
         reg = elastic_regularization(dsp_grids[i])
