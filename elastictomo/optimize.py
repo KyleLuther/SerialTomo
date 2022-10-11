@@ -1,3 +1,4 @@
+""" Gradient-descent minimization with automatic learning rate selection. Logging inspired by Optim.jl"""
 import jax.numpy as jnp
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_map, tree_reduce, tree_flatten
@@ -5,6 +6,7 @@ from jax.tree_util import tree_map, tree_reduce, tree_flatten
 import time
 from types import SimpleNamespace
 from tqdm import tqdm
+import sys
 
 def minimize(f, x0, a0=1.0, b=1e-4, growth=2.0, backtrack=0.1, maxiter=50, maxls=20, gtol=1e-12, rtol=1e-12, ftol=0.0, autorescale=True, verbose=True, nsteps=1, callback=None):
     """ Gradient descent on f, starting with initial condition x0
@@ -40,7 +42,7 @@ def minimize(f, x0, a0=1.0, b=1e-4, growth=2.0, backtrack=0.1, maxiter=50, maxls
     f0, g0 = f(x0)
 
     # main loop
-    for niter in (pbar := tqdm(range(maxiter), leave=True, disable=not verbose, desc='minimize')):
+    for niter in (pbar := tqdm(range(maxiter), leave=False, disable=not verbose, desc=f'minimizing over {len(tree_flatten(x0)[0])} param groups')):
         # rescale search direction
         if autorescale and niter > 0:
             r0 = tree_map(lambda dx_, dg_: (jnp.abs(dx_).mean().clip(rtol) / jnp.abs(dg_).mean().clip(rtol)).item(), dx, dg)
@@ -101,14 +103,32 @@ def minimize(f, x0, a0=1.0, b=1e-4, growth=2.0, backtrack=0.1, maxiter=50, maxls
             
     info['elapsed_time'] = time.time() - t0
     
-    # final printing
-    if verbose>=1:
-        final_log = tqdm(total=0, bar_format='{desc}', disable=not verbose)
-        final_log.set_description_str(f'results: converged={info["converged"]} {info["message"]}, niter={niter}, nfeval={info["nfeval"]}')
-        
     # format info
     info = SimpleNamespace(**info)
     
+    # final printing
+    if verbose:
+        # status
+        tqdm.write(f' * status: {"converged" if info.converged else "not converged"}, {info.message}', file=sys.stderr)
+        tqdm.write(f'', file=sys.stderr)
+        
+        # objective
+        tqdm.write(f' * objective info', file=sys.stderr)
+        tqdm.write(f"   f={f0}, |f-f'|={info.fs[-2]-info.fs[-1]}", file=sys.stderr)
+        tqdm.write(f'', file=sys.stderr)
+
+        # parameters
+        tqdm.write(f' * parameter info', file=sys.stderr)
+        for i,(x_,dx_,g_,r_) in enumerate(zip(tree_flatten(x0)[0], tree_flatten(dx)[0], tree_flatten(g0)[0], tree_flatten(r0)[0])):
+            tqdm.write(f"   p{i}: shape={jnp.size(x_)}, |x|={jnp.linalg.norm(x_):.3e}, |x-x'|={jnp.linalg.norm(dx_):.3e}, |g|={jnp.linalg.norm(g_):.3e}, r={r_:.3e}", file=sys.stderr)
+        tqdm.write(f'', file=sys.stderr)
+        
+        # work
+        tqdm.write(f' * work counters', file=sys.stderr)
+        tqdm.write(f'   seconds elapsed: {time.time()-t0:.3e}', file=sys.stderr)
+        tqdm.write(f'   iterations: {info.niter}', file=sys.stderr)
+        tqdm.write(f'   function calls: {info.nfeval}', file=sys.stderr)
+        
     # return
     return x0, info
 
