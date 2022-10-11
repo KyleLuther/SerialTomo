@@ -42,7 +42,7 @@ def minimize(f, x0, a0=1.0, b=1e-4, growth=2.0, backtrack=0.1, maxiter=50, maxls
     f0, g0 = f(x0)
 
     # main loop
-    for niter in (pbar := tqdm(range(maxiter), leave=False, disable=not verbose, desc=f'minimizing over {len(tree_flatten(x0)[0])} param groups')):
+    for niter in (pbar := tqdm(range(maxiter), leave=False, disable=not verbose, desc=f'minimizing over {len(tree_flatten(x0)[0])} params')):
         # rescale search direction
         if autorescale and niter > 0:
             r0 = tree_map(lambda dx_, dg_: (jnp.abs(dx_).mean().clip(rtol) / jnp.abs(dg_).mean().clip(rtol)).item(), dx, dg)
