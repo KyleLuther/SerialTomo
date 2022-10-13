@@ -101,6 +101,10 @@ def projection_kernel_(theta=(0.0,0.0,0.0), kernel_size=(16,16,16), voxel_size=(
 def projection_kernel(thetas, kernel_size=(16,16,16), voxel_size=(1,1,1), offset=(0.0,0.0), oversample=1, normalize=True):
     return vmap(projection_kernel_, in_axes=(0,None,None,None,None,None))(thetas, kernel_size, voxel_size, offset, oversample, normalize)
 
+def project(x, P):
+    y = lax.conv(x[None], P, window_strides=(1,1), padding='valid')[0]
+    return y
+
 # def minimal_kernel_size(thetas, D):
 #     """ Returns smallest kernel size that contains full kernel """
 #     H = W = int(np.ceil(D / np.cos(thetas.max())))
