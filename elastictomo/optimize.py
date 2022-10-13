@@ -42,21 +42,27 @@ def minimize(f, x0, a0=1.0, b=1e-4, growth=2.0, backtrack=0.1, maxiter=50, maxls
     f0, g0 = f(x0)
 
     # main loop
-    for niter in (pbar := tqdm(range(maxiter), leave=False, disable=not verbose, desc=f'minimizing over {len(tree_flatten(x0)[0])} params')):
+    nparams = len(tree_flatten(x0)[0])
+    for niter in (pbar := tqdm(range(maxiter), leave=True, disable=not verbose, desc=f'minimizing over {nparams} param{"s" if nparams > 1 else ""}')):
         # rescale search direction
         if autorescale and niter > 0:
             r0 = tree_map(lambda dx_, dg_: (jnp.abs(dx_).mean().clip(rtol) / jnp.abs(dg_).mean().clip(rtol)).item(), dx, dg)
         else:
             r0 = tree_map(lambda x: 1.0, x0)
             
-        # line search
+        # line search        
         x1, g1, a1, f1, nls, lsconverged = backtracking_line_search(f,f0,g0,x0,a0,r0,b,backtrack,maxls,nsteps)
-        
+            
+        # convergence checks
+        if lsconverged is False: # this needs to go first, because we don't accept this update
+            info['converged'] = False
+            info['message'] = f'line search reached {maxls=} iterations'
+            break
+            
         # store deltas
         df = f0 - f1
-        if autorescale:
-            dx = tree_map(lambda u,v: u-v, x1, x0)
-            dg = tree_map(lambda u,v: u-v, g1, g0)
+        dx = tree_map(lambda u,v: u-v, x1, x0)
+        dg = tree_map(lambda u,v: u-v, g1, g0)
             
         # reset
         x0 = x1
@@ -85,12 +91,7 @@ def minimize(f, x0, a0=1.0, b=1e-4, growth=2.0, backtrack=0.1, maxiter=50, maxls
             info['converged'] = False
             info['message'] = f'reached maxiter={maxiter} iterations'
             break
-        
-        if lsconverged is False: 
-            info['converged'] = False
-            info['message'] = f'line search reached {maxls=} iterations'
-            break
-        
+
         if gnorm < gtol:
             info['converged'] = True
             info['message'] = f'|g| < gtol'
@@ -109,25 +110,25 @@ def minimize(f, x0, a0=1.0, b=1e-4, growth=2.0, backtrack=0.1, maxiter=50, maxls
     # final printing
     if verbose:
         # status
-        tqdm.write(f' * status: {"converged" if info.converged else "not converged"}, {info.message}', file=sys.stderr)
+        tqdm.write(f' * status: {niter+1} iterations completed, {info.message}', file=sys.stderr)
         tqdm.write(f'', file=sys.stderr)
-        
-        # objective
-        tqdm.write(f' * objective info', file=sys.stderr)
-        tqdm.write(f"   f={f0}, |f-f'|={info.fs[-2]-info.fs[-1]}", file=sys.stderr)
-        tqdm.write(f'', file=sys.stderr)
+        if niter >= 1:
+            # objective
+            tqdm.write(f' * objective info', file=sys.stderr)
+            tqdm.write(f"   f={f0}, |f-f'|={info.fs[-2]-info.fs[-1]}", file=sys.stderr)
+            tqdm.write(f'', file=sys.stderr)
 
-        # parameters
-        tqdm.write(f' * parameter info', file=sys.stderr)
-        for i,(x_,dx_,g_,r_) in enumerate(zip(tree_flatten(x0)[0], tree_flatten(dx)[0], tree_flatten(g0)[0], tree_flatten(r0)[0])):
-            tqdm.write(f"   p{i}: shape={jnp.size(x_)}, |x|={jnp.linalg.norm(x_):.3e}, |x-x'|={jnp.linalg.norm(dx_):.3e}, |g|={jnp.linalg.norm(g_):.3e}, r={r_:.3e}", file=sys.stderr)
-        tqdm.write(f'', file=sys.stderr)
-        
-        # work
-        tqdm.write(f' * work counters', file=sys.stderr)
-        tqdm.write(f'   seconds elapsed: {time.time()-t0:.3e}', file=sys.stderr)
-        tqdm.write(f'   iterations: {info.niter}', file=sys.stderr)
-        tqdm.write(f'   function calls: {info.nfeval}', file=sys.stderr)
+            # parameters
+            tqdm.write(f' * parameter info', file=sys.stderr)
+            for i,(x_,dx_,g_,r_) in enumerate(zip(tree_flatten(x0)[0], tree_flatten(dx)[0], tree_flatten(g0)[0], tree_flatten(r0)[0])):
+                tqdm.write(f"   p{i}: shape={jnp.shape(x_)}, |x|={jnp.linalg.norm(x_):.3e}, |x-x'|={jnp.linalg.norm(dx_):.3e}, |g|={jnp.linalg.norm(g_):.3e}, eta={a0*r_:.3e}", file=sys.stderr)
+            tqdm.write(f'', file=sys.stderr)
+
+            # work
+            tqdm.write(f' * work counters', file=sys.stderr)
+            tqdm.write(f'   seconds elapsed: {time.time()-t0:.3e}', file=sys.stderr)
+            tqdm.write(f'   iterations: {info.niter}', file=sys.stderr)
+            tqdm.write(f'   function calls: {info.nfeval}', file=sys.stderr)
         
     # return
     return x0, info
