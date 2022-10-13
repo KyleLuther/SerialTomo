@@ -21,6 +21,13 @@ def resize(stack, size):
         stack = downscale_local_mean(stack, (1, size, size))
     return stack
 
+def swap_axes(stack, axes):
+    if axes == 'xy': pass
+    elif axes == 'xz': stack = stack.transpose(2,0,1)
+    elif axes == 'yz': stack = stack.transpose(1,0,2)
+    else: raise ValueError(f'unrecognized axes order {axes}')
+    return stack
+
 def stackpicker(stack, low=1.0, high=99.0, size=1, norm_every=False, axes='xy'):
     # convert to numpy
     stack = np.array(stack)
@@ -41,17 +48,12 @@ def stackpicker(stack, low=1.0, high=99.0, size=1, norm_every=False, axes='xy'):
     stack = pclip(stack, low, high)
     
     # permute
-    if axes == 'xy':
-        pass
-    elif axes == 'xz':
-        stack = stack.transpose(1,0,2)
-    else:
-        raise ValueError(f'unrecognized axes order {axes}')
+    stack = swap_axes(stack, axes)
 
     # show
     return stackview.picker(stack,continuous_update=True)
 
-def stackcurtain(stack1, stack2, low=1.0, high=99.0, size=1, rescale=True):
+def stackcurtain(stack1, stack2, low=1.0, high=99.0, size=1, rescale=True, axes='xy'):
     # convert to numpy
     stack1 = np.array(stack1)
     stack2 = np.array(stack2)
@@ -69,6 +71,10 @@ def stackcurtain(stack1, stack2, low=1.0, high=99.0, size=1, rescale=True):
     stack1 = pclip(stack1, low, high)
     stack2 = pclip(stack2, low, high)
     
+    # permute
+    stack1 = swap_axes(stack1, axes)
+    stack2 = swap_axes(stack2, axes)
+    
     # rescale
     if rescale:
         stack1 = (stack1 - stack1.min()) / (stack1.max() - stack1.min())
@@ -77,7 +83,9 @@ def stackcurtain(stack1, stack2, low=1.0, high=99.0, size=1, rescale=True):
     # show
     return stackview.curtain(stack1, stack2, continuous_update=True)
 
-# displacement field visualization
+##############################
+# displacement visualization #
+##############################
 def plotvecs(vecs, ax=None, figsize=(6,6), dpi=150, f=1):
     """ Plot vector field """
     assert(len(vecs.shape) == 3 and vecs.shape[2] == 2)
