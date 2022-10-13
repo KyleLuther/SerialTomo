@@ -3,7 +3,8 @@ import cv2
 import numpy as np
 from skimage.transform import downscale_local_mean, warp
 from types import SimpleNamespace
-from tqdm import trange
+from tqdm import tqdm, trange
+import sys
 
 from elastictomo.utils import pclip
 
@@ -15,20 +16,21 @@ from elastictomo.utils import pclip
 ###########################################
 # Alignment: Preprocess-Register-Transform #
 ###########################################
-def align_stack(stack: 'KxHxW uint8', downsample=10, ref_idx=None, n_features=3000, lowe_ratio=0.75, method='sequential', clip_percentile=1.0):
+def align_stack(stack: 'KxHxW uint8', downsample=10, ref_idx=None, n_features=3000, lowe_ratio=0.75, method='sequential', clip_percentile=1.0, **kwargs):
     """ aligns stack """
-    assert((stack.ndim ==3) and (stack.dtype == 'uint8'))
+    assert((stack.ndim ==3))
     if ref_idx is None: ref_idx = stack.shape[0] // 2
     
     # logging info
-    print(f'performing {method}-based alignment of {stack.shape} stack to section {ref_idx}...')
+    tqdm.write(f'performing {method}-based alignment of {stack.shape} {stack.dtype} stack to section {ref_idx}...', file=sys.stderr)
+    # print(f'performing {method}-based alignment of {stack.shape} stack to section {ref_idx}...')
     
     # preprocess
     pre = downsample_stack(stack, downsample)
     pre = normalize_stack(pre, clip_percentile)
     
     # register
-    H, info = register_stack(pre, ref_idx, n_features, lowe_ratio, method)
+    H, info = register_stack(pre, ref_idx, n_features, lowe_ratio, method, **kwargs)
     H[:,:2,2] *= downsample
     H[:,2,:2] /= downsample
     
@@ -42,13 +44,12 @@ def align_stack(stack: 'KxHxW uint8', downsample=10, ref_idx=None, n_features=30
 ##################
 # Transformation #
 ##################
-def transform_stack(stack: 'KxHxW', H: 'Kx3x3') -> 'KxHwW':
+def transform_stack(stack: 'KxHxW', H: 'Kx3x3', verbose=True) -> 'KxHwW':
     assert(len(stack) == len(H))
     assert((stack.ndim==3) and (H.ndim==3) and (H.shape[1] == H.shape[2] == 3))
     
     out = np.zeros(stack.shape, dtype=stack.dtype)
-    for i in trange(stack.shape[0], desc='transformation'):
-        # out[i] = cv2.warpPerspective(stack[i], H[i], stack[i].shape[::-1], flags=1) # linear interpolation
+    for i in trange(stack.shape[0], desc='transforming', disable=not verbose):
         out[i] = cv2.warpPerspective(stack[i], H[i], stack[i].shape[::-1], flags=1, borderValue = stack[i].mean()) # linear interpolation
         
     return out
@@ -56,7 +57,7 @@ def transform_stack(stack: 'KxHxW', H: 'Kx3x3') -> 'KxHwW':
 ################
 # Registration #
 ################
-def register_stack(stack: 'KxHxW uint8', ref_idx=None, n_features=3000, lowe_ratio=0.75, method='sequential'):
+def register_stack(stack: 'KxHxW uint8', ref_idx=None, n_features=3000, lowe_ratio=0.75, method='sequential', verbose=True, **kwargs):
     """ Projective alignment of a stack
     Returns:
         H: Kx3x3 array, each 3x3 matrix maps coordinates in image k to ref_idx
@@ -70,19 +71,21 @@ def register_stack(stack: 'KxHxW uint8', ref_idx=None, n_features=3000, lowe_rat
     # compute transformation matrices
     if method == 'sequential':
         H, infos = [], []
-        for i in trange(stack.shape[0]-1, desc='registration'):
-            H_, info_ = register_pair(stack[i], stack[i+1], n_features, lowe_ratio)
+        for i in (pbar := trange(stack.shape[0]-1, desc='registering with SIFT', disable=not verbose)):
+            H_, info_ = register_pair(stack[i], stack[i+1], n_features, lowe_ratio, **kwargs)
             H.append(H_)
             infos.append(info_)
+            pbar.set_postfix({'# candidates': len(info_.accepted_matches), '# matched': info_.accepted_matches.sum()})
         H = np.array(H)
         H = rel2abs(H, ref_idx)
         
     elif method == 'reference':
         H, infos = [], []
-        for i in trange(stack.shape[0], desc='registration'):
-            H_, info_ = register_pair(stack[ref_idx], stack[i], n_features, lowe_ratio)
+        for i in (pbar := trange(stack.shape[0], desc='registering with SIFT', disable=not verbose)):
+            H_, info_ = register_pair(stack[ref_idx], stack[i], n_features, lowe_ratio, **kwargs)
             H.append(H_)
             infos.append(info_)
+            pbar.set_postfix({'# candidates': len(info_.accepted_matches), '# matched': info_.accepted_matches.sum()})
         H = np.array(H)
     
     else:
@@ -96,7 +99,7 @@ def register_stack(stack: 'KxHxW uint8', ref_idx=None, n_features=3000, lowe_rat
 
     return H, info
 
-def register_pair(ref: 'HxW uint8', mov: 'HxW uint8', n_features=3000, lowe_ratio=0.75):
+def register_pair(ref: 'HxW uint8', mov: 'HxW uint8', n_features=3000, lowe_ratio=0.75, **kwargs):
     """ Projective registration of pair of images using SIFT features
     Returns:
         H: 3x3 homography matrix: maps mov coordinates to ref, ref(r) = mov(Hr)
@@ -137,9 +140,9 @@ def register_pair(ref: 'HxW uint8', mov: 'HxW uint8', n_features=3000, lowe_rati
         points1[i, :] = kp1[match.queryIdx].pt    #gives index of the descriptor in the list of query descriptors
         points2[i, :] = kp2[match.trainIdx].pt    #gives index of the descriptor in the list of train descriptors
 
-    H, mask = cv2.findHomography(points1, points2, cv2.RANSAC)
+    H, mask = cv2.findHomography(points1, points2, cv2.RANSAC, **kwargs)
     mask = mask[:,0]
-
+    
     # logging info
     info = SimpleNamespace()
     info.key_points1 = points1
@@ -151,20 +154,20 @@ def register_pair(ref: 'HxW uint8', mov: 'HxW uint8', n_features=3000, lowe_rati
 #################
 # Preprocessing #
 #################
-def downsample_stack(stack: 'KxHxW', downsample: 'int'):
+def downsample_stack(stack: 'KxHxW', downsample: 'int', verbose=True):
     assert((stack.shape[1]%downsample == 0) and (stack.shape[1]%downsample == 0))
     
     out = np.zeros((stack.shape[0], stack.shape[1]//downsample, stack.shape[2]//downsample), dtype=stack.dtype)
-    for i in trange(stack.shape[0], desc='downsample'):
+    for i in trange(stack.shape[0], desc=f'downsampling by {downsample}x', disable=not verbose):
         out[i] = downscale_local_mean(stack[i], downsample)
         
     return out
 
-def normalize_stack(img: '...xHxW array', clip_percentile=1.0) -> '...xHxW uint8 array':
+def normalize_img(img: 'HxW array', clip_percentile=1.0) -> 'HxW uint8 array':
     # center and scale every image in the stack
     img = img - img.mean(axis=(-1,-2),keepdims=True)
     img = img  / img.std(axis=(-1,-2),keepdims=True).clip(1e-16)
-    
+
     # convert to uint8
     img = pclip(img,clip_percentile,100.0-clip_percentile)
     img = img - img.min()
@@ -172,6 +175,25 @@ def normalize_stack(img: '...xHxW array', clip_percentile=1.0) -> '...xHxW uint8
     img = (255.*img).astype('uint8')
     
     return img
+
+def normalize_stack(img: '...xHxW array', clip_percentile=1.0, verbose=True) -> '...xHxW uint8 array':
+    out = np.zeros(img.shape,dtype='uint8')
+    for i in trange(img.shape[0], desc=f'normalizing', disable=not verbose):
+        out[i] = normalize_img(img[i])
+    return out
+
+# def normalize_stack(img: '...xHxW array', clip_percentile=1.0) -> '...xHxW uint8 array':
+#     # center and scale every image in the stack
+#     img = img - img.mean(axis=(-1,-2),keepdims=True)
+#     img = img  / img.std(axis=(-1,-2),keepdims=True).clip(1e-16)
+    
+#     # convert to uint8
+#     img = pclip(img,clip_percentile,100.0-clip_percentile)
+#     img = img - img.min()
+#     img = img / img.max().clip(1e-16)
+#     img = (255.*img).astype('uint8')
+    
+#     return img
 
 #########
 # Utils #
