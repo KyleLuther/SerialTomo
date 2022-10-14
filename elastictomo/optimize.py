@@ -126,7 +126,7 @@ def minimize(f, x0, a0=1.0, b=1e-4, growth=2.0, backtrack=0.1, maxiter=50, maxls
 
             # work
             tqdm.write(f' * work counters', file=sys.stderr)
-            tqdm.write(f'   seconds elapsed: {time.time()-t0:.3e}', file=sys.stderr)
+            tqdm.write(f'   elapsed time: {time.time()-t0:.3f} seconds', file=sys.stderr)
             tqdm.write(f'   iterations: {info.niter}', file=sys.stderr)
             tqdm.write(f'   function calls: {info.nfeval}', file=sys.stderr)
         
