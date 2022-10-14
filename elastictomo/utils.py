@@ -28,7 +28,7 @@ def swap_axes(stack, axes):
     else: raise ValueError(f'unrecognized axes order {axes}')
     return stack
 
-def stackpicker(stack, low=1.0, high=99.0, size=1, norm_every=False, axes='xy'):
+def stackpicker(stack, low=1.0, high=99.0, size=1, norm_every=False, view='xy'):
     # convert to numpy
     stack = np.array(stack)
     
@@ -45,7 +45,7 @@ def stackpicker(stack, low=1.0, high=99.0, size=1, norm_every=False, axes='xy'):
     stack = pclip(stack, low, high)
     
     # permute
-    stack = swap_axes(stack, axes)
+    stack = swap_axes(stack, view)
     
     # resize
     stack = resize(stack, size)
@@ -53,7 +53,7 @@ def stackpicker(stack, low=1.0, high=99.0, size=1, norm_every=False, axes='xy'):
     # show
     return stackview.picker(stack,continuous_update=True)
 
-def stackcurtain(stack1, stack2, low=1.0, high=99.0, size=1, rescale=True, axes='xy'):
+def stackcurtain(stack1, stack2, low=1.0, high=99.0, size=1, rescale=True, view='xy'):
     # convert to numpy
     stack1 = np.array(stack1)
     stack2 = np.array(stack2)
@@ -68,8 +68,8 @@ def stackcurtain(stack1, stack2, low=1.0, high=99.0, size=1, rescale=True, axes=
     stack2 = pclip(stack2, low, high)
     
     # permute
-    stack1 = swap_axes(stack1, axes)
-    stack2 = swap_axes(stack2, axes)
+    stack1 = swap_axes(stack1, view)
+    stack2 = swap_axes(stack2, view)
     
     # rescale
     if rescale:
