@@ -23,8 +23,8 @@ def resize(stack, size):
 
 def swap_axes(stack, axes):
     if axes == 'xy': pass
-    elif axes == 'xz': stack = stack.transpose(2,0,1)
-    elif axes == 'yz': stack = stack.transpose(1,0,2)
+    elif axes == 'xz': stack = stack.transpose(1,0,2)
+    elif axes == 'yz': stack = stack.transpose(2,0,1)
     else: raise ValueError(f'unrecognized axes order {axes}')
     return stack
 
