@@ -37,9 +37,6 @@ def stackpicker(stack, low=1.0, high=99.0, size=1, norm_every=False, axes='xy'):
     assert(high >= 0.0 and high <= 100.0)
     assert(low < high)
     
-    # resize
-    stack = resize(stack, size)
-    
     # normalize evey section
     if norm_every:
         stack = (stack - stack.mean(axis=(1,2),keepdims=True)) / stack.std(axis=(1,2),keepdims=True).clip(1e-16)
@@ -49,6 +46,9 @@ def stackpicker(stack, low=1.0, high=99.0, size=1, norm_every=False, axes='xy'):
     
     # permute
     stack = swap_axes(stack, axes)
+    
+    # resize
+    stack = resize(stack, size)
 
     # show
     return stackview.picker(stack,continuous_update=True)
@@ -63,10 +63,6 @@ def stackcurtain(stack1, stack2, low=1.0, high=99.0, size=1, rescale=True, axes=
     assert(high >= 0.0 and high <= 100.0)
     assert(low < high)
     
-    # resize
-    stack1 = resize(stack1, size)
-    stack2 = resize(stack2, size)
-    
     # clip
     stack1 = pclip(stack1, low, high)
     stack2 = pclip(stack2, low, high)
@@ -79,6 +75,10 @@ def stackcurtain(stack1, stack2, low=1.0, high=99.0, size=1, rescale=True, axes=
     if rescale:
         stack1 = (stack1 - stack1.min()) / (stack1.max() - stack1.min())
         stack2 = (stack2 - stack2.min()) / (stack2.max() - stack2.min())
+        
+    # resize
+    stack1 = resize(stack1, size)
+    stack2 = resize(stack2, size)
 
     # show
     return stackview.curtain(stack1, stack2, continuous_update=True)
