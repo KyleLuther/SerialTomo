@@ -15,7 +15,8 @@ from elastictomo.optimize import minimize
 def register_pair(ref: 'HxW float32', mov: 'HxW float32', grid_size=(2,2), lam=1.0, init_position=(0,0), method='interpolate_energy', kernel='quadratic', **kwargs):
     # checks
     assert((ref.ndim == 2) and (mov.ndim == 2))
-
+    ref, mov = jnp.array(ref), jnp.array(mov)
+    
     # initialize displacements to be in center + user provided displacement
     init_offset = jnp.array((mov.shape[0] - ref.shape[0], mov.shape[1] - ref.shape[1]), dtype='float32') / 2.0
     displacements = jnp.zeros((grid_size[0],grid_size[1],2)) + init_offset + jnp.array(init_position)
@@ -65,39 +66,49 @@ def quadratic_kernel(s: jnp.array) -> jnp.array:
     out = jnp.where(s > 3/2, jnp.zeros(s.shape,dtype=s.dtype), out)
     return out
 
-########################
-# energy interpolation #
-########################
-def interpolate(img: 'hxw array', displacements: 'HxWx2 array', cval=0.0, kernel='quadratic') -> 'HxWxQ, HxWxQ, HxWxQ array':
-    # create grid locations
-    H, W = displacements.shape[:2]
-    r = jnp.stack(jnp.meshgrid(jnp.arange(H), jnp.arange(W), indexing='ij'), axis=-1)
-    r = r + displacements
-    
+#########################
+# interpolation weights #
+#########################
+def interpolate(img: 'NxM array', displacements: 'HxWx2 array', kernel='quadratic') -> 'HxWxQ, HxWxQ, HxWxQ array':
+    """ Returns grid points and interpolation points for 2D image interpolation with displacement fields
+    Args:
+        img: NxM array
+        displacements: HxW array
+        kernel: (str) "linear" or "quadratic"
+    Returns:
+        interp: HxWxQ array. Image interpolated at grid points
+        weights: HxWxQ float32. Weights of interpolated grid points
+        in_bounds: HxWxQ bool. Specifies if grid points were in bounds
+        
+        Q is the number of interpolation points. 
+        Q=4 for linear kernel, Q=9 for quadratic kernel
+    """
     # get weights and locations of neighbors
     if kernel == 'linear':
-        edges = jnp.array(list(product((0,1),(0,1)))) # 4x2
-        reference = jnp.floor(r).astype('int')
-        neighbors = reference[:,:,None,:] + edges[None,None,:,:] # HxWx4x2
-        weights = linear_kernel(r[:,:,None,0]-neighbors[...,0]) * linear_kernel(r[:,:,None,1]-neighbors[...,1]) # HxWx4
+        edges = jnp.array(list(product((0,1),(0,1))),dtype='int16') # 4x2
+        reference = jnp.floor(displacements).astype('int16')
+        weights = linear_kernel(reference[:,:,None,0]-displacements[:,:,None,0]+edges[...,0]) \
+                * linear_kernel(reference[:,:,None,1]-displacements[:,:,None,1]+edges[...,1]) # HxWx4
     elif kernel == 'quadratic':    
-        edges = jnp.array(list(product((-1,0,1),(-1,0,1)))) # 9x2
-        reference = jnp.floor(r+0.5).astype('int')
-        neighbors = reference[:,:,None,:] + edges[None,None,:,:] # HxWx9x2
-        weights = quadratic_kernel(r[:,:,None,0]-neighbors[...,0]) * quadratic_kernel(r[:,:,None,1]-neighbors[...,1]) # HxWx9
+        edges = jnp.array(list(product((-1,0,1),(-1,0,1))),dtype='int16') # 9x2
+        reference = jnp.floor(displacements+0.5).astype('int16')
+        weights = quadratic_kernel(reference[:,:,None,0]-displacements[:,:,None,0]+edges[...,0]) \
+                * quadratic_kernel(reference[:,:,None,1]-displacements[:,:,None,1]+edges[...,1]) # HxWx9
     else:
         raise ValueError(f'Unrecognized kernel: {kernel}, must be "linear" or "quadratic"')
+        
+    # create grid locations
+    H, W = displacements.shape[:2]
+    r = jnp.stack(jnp.meshgrid(jnp.arange(H,dtype='int16'), jnp.arange(W,dtype='int16'), indexing='ij'), axis=-1)
+    grid = r[:,:,None,:] + reference[:,:,None,:] + edges[None,None,:,:] # HxWxQx2
 
     # access neighbors
-    interp = img[neighbors[...,0], neighbors[...,1]]
+    interp = img[grid[...,0], grid[...,1]]
     
     # make sure to hand out of bounds values correctly
-    in_bounds = (neighbors[...,0] >= 0) * (neighbors[...,0] <= img.shape[0]-1) *\
-                (neighbors[...,1] >= 0) * (neighbors[...,1] <= img.shape[1]-1)
+    in_bounds = (grid[...,0] >= 0) * (grid[...,0] <= img.shape[0]-1) *\
+                (grid[...,1] >= 0) * (grid[...,1] <= img.shape[1]-1)
     
-    interp = jnp.where(in_bounds, interp, cval * jnp.ones(interp.shape, dtype=interp.dtype))
-    weights = jnp.where(in_bounds, weights, jnp.zeros(weights.shape, dtype=weights.dtype))
-
     return interp, weights, in_bounds
 
 ##########
@@ -115,7 +126,7 @@ def photometric_energy(displacements: 'HxWx2 array', ref: '2D array', mov: '2D a
     assert((displacements.shape[0] == ref.shape[0]) and (displacements.shape[1] == ref.shape[1]))
     
     # interpolation weights
-    mov_interp, weights, in_bounds = interpolate(mov, displacements, cval=mov.mean(), kernel=kernel)
+    mov_interp, weights, in_bounds = interpolate(mov, displacements, kernel=kernel)
     
     # compute energy
     if method == 'interpolate_energy':
@@ -144,34 +155,43 @@ def elastic_energy(displacements: 'array(H,W,2)') -> float:
 ###############
 # In progress #
 ###############
-# def randomized_interpolate(key: 'PRNGKey', img: 'hxw array', displacements: 'HxWx2 array', R=1, cval=0.0, kernel='quadratic') -> 'HxWxR, HxWxR, HxWxR array':
-#     # create grid locations
-#     H, W = displacements.shape[:2]
-#     r = jnp.stack(jnp.meshgrid(jnp.arange(H), jnp.arange(W), indexing='ij'), axis=-1)
-#     r = r + displacements
-    
-#     # get weights and locations of neighbors
-#     if kernel == 'linear':
-#         edges = jax.random.choice(key,2,shape=(H,W,R,2))
-#         reference = jnp.floor(r).astype('int')
-#         neighbors = reference[:,:,None,:] + edges[None,None,:,None] # HxWx4x2
-#         probabilities = linear_kernel(r[:,:,None,0]-neighbors[...,0]) * linear_kernel(r[:,:,None,1]-neighbors[...,1]) # HxWx4
-#     elif kernel == 'quadratic':    
-#         edges = jax.random.choice(key,3,shape=(H,W,R,2))-1
-#         reference = jnp.floor(r+0.5).astype('int')
-#         neighbors = reference[:,:,None,:] + edges # HxWxRx2
-#         probabilities = quadratic_kernel(r[:,:,None,0]-neighbors[...,0]) * quadratic_kernel(r[:,:,None,1]-neighbors[...,1]) # HxWxR
-#     else:
-#         raise ValueError(f'Unrecognized kernel: {kernel}, must be "linear" or "quadratic"')
+def randomized_interpolate(key: 'PRNGKey', img: 'hxw array', displacements: 'HxWx2 array', kernel='quadratic', R=1) -> 'HxWxR, HxWxR, HxWxR array':
+    """ Returns grid points and interpolation points for 2D image interpolation with displacement fields
+    Args:
+        key: prng key
+        img: NxM array
+        displacements: HxW array
+        kernel: (str) "linear" or "quadratic"
+        R: number of edges per grid point to sample
+    Returns:
+        interp: HxWxR array. Image interpolated at grid points
+        weights: HxWxR float32. Weights of interpolated grid points
+        in_bounds: HxWxR bool. Specifies if grid points were in bounds
+    """
+    # get weights and locations of neighbors
+    H, W = displacements.shape[:2]
+    if kernel == 'linear':
+        reference = jnp.floor(displacements).astype('int16')
+        edges = jax.random.choice(key,jnp.array([0,1],dtype='int8'),shape=(H,W,R,2))
+        weights = linear_kernel(reference[:,:,None,0]-displacements[:,:,None,0]+edges[...,0]) \
+                * linear_kernel(reference[:,:,None,1]-displacements[:,:,None,1]+edges[...,1]) # HxWxR
+    elif kernel == 'quadratic':    
+        reference = jnp.floor(displacements+0.5).astype('int16')
+        edges = jax.random.choice(key,jnp.array([-1,0,1],dtype='int8'),shape=(H,W,R,2))
+        weights = quadratic_kernel(reference[:,:,None,0]-displacements[:,:,None,0]+edges[...,0]) \
+                * quadratic_kernel(reference[:,:,None,1]-displacements[:,:,None,1]+edges[...,1]) # HxWxR
+    else:
+        raise ValueError(f'Unrecognized kernel: {kernel}, must be "linear" or "quadratic"')
         
-#     # interpolate
-#     interp = img[neighbors[...,0], neighbors[...,1]]
-    
-#     # make sure to hand out of bounds values correctly
-#     in_bounds = (neighbors[...,0] >= 0) * (neighbors[...,0] <= img.shape[0]-1) *\
-#                 (neighbors[...,1] >= 0) * (neighbors[...,1] <= img.shape[1]-1)
-    
-#     interp = jnp.where(in_bounds, interp, cval * jnp.ones(interp.shape, dtype=interp.dtype))
-#     probabilities = jnp.where(in_bounds, probabilities, jnp.zeros(probabilities.shape, dtype=probabilities.dtype))
+    # create grid locations
+    r = jnp.stack(jnp.meshgrid(jnp.arange(H,dtype='int16'), jnp.arange(W,dtype='int16'), indexing='ij'), axis=-1)
+    grid = r[:,:,None,:] + reference[:,:,None,:] + edges
 
-#     return interp, probabilities, in_bounds
+    # access neighbors
+    interp = img[grid[...,0], grid[...,1]]
+    
+    # make sure to hand out of bounds values correctly
+    in_bounds = (grid[...,0] >= 0) * (grid[...,0] <= img.shape[0]-1) *\
+                (grid[...,1] >= 0) * (grid[...,1] <= img.shape[1]-1)
+
+    return interp, weights, in_bounds
