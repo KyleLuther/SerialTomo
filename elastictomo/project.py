@@ -128,7 +128,21 @@ def projection_kernel_(theta=(0.0,0.0,0.0), kernel_size=(16,16,16), voxel_size=(
 def projection_kernel(thetas, kernel_size=(16,16,16), voxel_size=(1,1,1), offset=(0.0,0.0), oversample=1, normalize=True):
     return vmap(projection_kernel_, in_axes=(0,None,None,None,None,None))(thetas, kernel_size, voxel_size, offset, oversample, normalize)
 
-def project(x, P):
+def project(x, thetas, voxel_size=(1,1,1), oversample=1, normalize=True):
+    assert(np.alltrue(thetas[:,0] == 0)) # don't support rotation around z
+    
+    # find kernel size
+    K, D = thetas.shape[0], x.shape[0]
+    Y = int(np.ceil(1 + D * np.max(np.abs(np.tan(np.pi/180 * thetas[:,2])))))
+    Y = int(np.ceil(1 + Y * np.max(np.abs(np.tan(np.pi/180 * thetas[:,0])))))
+    
+    X = int(np.ceil(1 + D * np.max(np.abs(np.tan(np.pi/180 * thetas[:,1])))))
+    X = int(np.ceil(1 + X * np.max(np.abs(np.tan(np.pi/180 * thetas[:,0])))))
+    
+    # create kernel
+    P = projection_kernel(thetas, kernel_size=(D,Y,X), voxel_size=voxel_size, oversample=oversample, normalize=normalize)
+    
+    # apply kernel
     y = lax.conv(x[None], P, window_strides=(1,1), padding='valid')[0]
     return y
 
