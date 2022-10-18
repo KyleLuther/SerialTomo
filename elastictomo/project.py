@@ -134,10 +134,7 @@ def project(x, thetas, voxel_size=(1,1,1), oversample=1, normalize=True):
     # find kernel size
     K, D = thetas.shape[0], x.shape[0]
     Y = int(np.ceil(1 + D * np.max(np.abs(np.tan(np.pi/180 * thetas[:,2])))))
-    Y = int(np.ceil(1 + Y * np.max(np.abs(np.tan(np.pi/180 * thetas[:,0])))))
-    
     X = int(np.ceil(1 + D * np.max(np.abs(np.tan(np.pi/180 * thetas[:,1])))))
-    X = int(np.ceil(1 + X * np.max(np.abs(np.tan(np.pi/180 * thetas[:,0])))))
     
     # create kernel
     P = projection_kernel(thetas, kernel_size=(D,Y,X), voxel_size=voxel_size, oversample=oversample, normalize=normalize)
