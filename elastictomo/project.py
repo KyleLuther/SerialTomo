@@ -128,36 +128,14 @@ def projection_kernel_(theta=(0.0,0.0,0.0), kernel_size=(16,16,16), voxel_size=(
 def projection_kernel(thetas, kernel_size=(16,16,16), voxel_size=(1,1,1), offset=(0.0,0.0), oversample=1, normalize=True):
     return vmap(projection_kernel_, in_axes=(0,None,None,None,None,None))(thetas, kernel_size, voxel_size, offset, oversample, normalize)
 
-def project(x, thetas, voxel_size=(1,1,1), oversample=1, normalize=True):
-    assert(np.alltrue(thetas[:,0] == 0)) # don't support rotation around z
+def get_kernel_size(Z, thetas):
+    """ Returns smallest kernel size that contains full kernel """
+    Y = int(np.ceil(1 + Z * np.max(np.abs(np.tan(np.pi/180 * thetas[:,2])))))
+    X = int(np.ceil(1 + Z * np.max(np.abs(np.tan(np.pi/180 * thetas[:,1])))))
     
-    # find kernel size
-    K, D = thetas.shape[0], x.shape[0]
-    Y = int(np.ceil(1 + D * np.max(np.abs(np.tan(np.pi/180 * thetas[:,2])))))
-    X = int(np.ceil(1 + D * np.max(np.abs(np.tan(np.pi/180 * thetas[:,1])))))
-    
-    # create kernel
-    P = projection_kernel(thetas, kernel_size=(D,Y,X), voxel_size=voxel_size, oversample=oversample, normalize=normalize)
-    
-    # apply kernel
+    return Y,X
+
+def project(x, thetas, kernel_size=(16,16,16), voxel_size=(1,1,1), oversample=1, normalize=True):
+    P = projection_kernel(thetas, kernel_size=kernel_size, voxel_size=voxel_size, oversample=oversample, normalize=normalize)
     y = lax.conv(x[None], P, window_strides=(1,1), padding='valid')[0]
     return y
-
-# def minimal_kernel_size(thetas, D):
-#     """ Returns smallest kernel size that contains full kernel """
-#     H = W = int(np.ceil(D / np.cos(thetas.max())))
-#     p = projection_kernel(thetas, kernel_size=(D,H,W), voxel_size=(1,1,1), offset=(0.0,0.0), oversample=1)
-#     size_y = (p.sum(axis=(0,1,3)) > 0).sum()
-#     size_x = (p.sum(axis=(0,1,2)) > 0).sum()
-    
-#     return size_y, size_x
-    
-
-# def project(vol, thetas, kernel_size, voxel_size, offset, oversample=1, normalize=True, interp_method='trilinear'):
-#     # create projection kernel
-#     P = projection_kernel(thetas, kernel_size, voxel_size)
-    
-#     # create projection
-#     c = lax.conv(vol[None],P,window_strides=(1,1),padding='valid')[0]
- 
-#     return c
