@@ -51,6 +51,33 @@ def integration_weights(r, kernel_size):
 
     return integ_weights
 
+def integration_weights_nearest(r, kernel_size):
+    """ Creates interpolation weights for r in volume """
+    # get weights to each grid point
+    r = r - 0.5
+    corners = jnp.floor(r)[...,None,:] + jnp.array(tuple(product((0,1),repeat=3))) # ... x 8 x 3
+    weights = jnp.prod(1 - jnp.abs(r[...,None,:] - corners), axis=-1) # ... x 8
+    
+    # mask out of bounds corners
+    mask = jnp.ones(weights.shape)
+    for i in range(3):
+        mask = mask * (corners[...,i] >= 0) * (corners[...,i] < kernel_size[i])
+    weights = (mask*weights)
+    
+    # rescale at the borders
+    weights = weights / weights.sum(-1, keepdims=True).clip(1/8)
+    
+    # map grid points to 1 hot vectors
+    factor_ = jnp.array([kernel_size[1]*kernel_size[2], kernel_size[2], 1]) # 3
+    locs = (corners*factor_).sum(axis=-1).astype(int) # ... x 8
+    ones = one_hot(locs, np.prod(kernel_size)) # ... x 8 x np.prod(kernel_size)
+    
+    # multiply by weights and sum
+    grid_weights = (ones * weights[...,None]).reshape((-1,)+kernel_size) # ... x kernel_size
+    integ_weights = grid_weights.sum(0) # kernel_size
+
+    return integ_weights
+
 def projection_kernel_(theta=(0.0,0.0,0.0), kernel_size=(16,16,16), voxel_size=(1,1,1), offset=(0.0,0.0), oversample=1, normalize=True):
     """ Creates projection kernel """
     # checks
