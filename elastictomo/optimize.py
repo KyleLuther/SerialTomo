@@ -51,8 +51,13 @@ def minimize(f, x0, a0=1.0, b=1e-4, growth=2.0, backtrack=0.1, maxiter=50, maxls
             r0 = tree_map(lambda x: 1.0, x0)
             
         # line search        
-        converged_first = True
         x1, g1, a1, f1, nls, lsconverged = backtracking_line_search(f,f0,g0,x0,a0,r0,b,backtrack,maxls,nsteps=nsteps)
+        
+        # convergence check
+        if lsconverged is False: # this needs to go first, because we don't accept this update
+            info['converged'] = False
+            info['message'] = f'line search reached {maxls=} iterations'
+            break
             
         # store deltas
         df = f0 - f1
@@ -82,11 +87,6 @@ def minimize(f, x0, a0=1.0, b=1e-4, growth=2.0, backtrack=0.1, maxiter=50, maxls
             callback(x0)
             
         # convergence checks
-        if lsconverged is False: # this needs to go first, because we don't accept this update
-            info['converged'] = False
-            info['message'] = f'line search reached {maxls=} iterations'
-            break
-
         if niter + 1 == maxiter: 
             info['converged'] = False
             info['message'] = f'reached maxiter={maxiter} iterations'
