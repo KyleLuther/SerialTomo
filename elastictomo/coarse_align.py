@@ -140,8 +140,12 @@ def register_pair(ref: 'HxW uint8', mov: 'HxW uint8', n_features=3000, lowe_rati
         points1[i, :] = kp1[match.queryIdx].pt    #gives index of the descriptor in the list of query descriptors
         points2[i, :] = kp2[match.trainIdx].pt    #gives index of the descriptor in the list of train descriptors
 
-    H, mask = cv2.findHomography(points1, points2, cv2.RANSAC, **kwargs)
-    mask = mask[:,0]
+    try:
+        H, mask = cv2.findHomography(points1, points2, cv2.RANSAC, **kwargs)
+        mask = mask[:,0]
+    except:
+        H = np.eye(3)
+        mask = np.zeros(points1.shape[0])
     
     # logging info
     info = SimpleNamespace()
