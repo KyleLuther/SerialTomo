@@ -86,9 +86,22 @@ def weights2kernel(grid: 'OxDxQx2', weights: 'OxDxQ', kernel_size: 'D,H,W') -> '
     kernel = kernel.sum(0)
     return kernel
 
+def normalize_weights(grid: 'OxDxQx2', weights: 'OxDxQ', theta: float, img_size: 'H,W'):
+    """ Normalize weights to A) handle out of bounds B) correct for segment lengths"""
+    # handle out of bounds
+    in_bounds = (grid[...,0] >= 0) * (grid[...,0] <= img_size[0]-1) *\
+                (grid[...,1] >= 0) * (grid[...,1] <= img_size[1]-1)
+    norm = (in_bounds * weights).sum(-1,keepdims=True)
+    
+    # correct for segment length
+    norm = jnp.cos(theta*np.pi/180.) * norm
+    
+    return weights / norm
+    
 def create_kernel_(theta: float, phi: float, kernel_size: 'D,H,W', voxel_size: 'd,h,w', oversample: int, interp_method: str) -> 'DxHxW':
     points = integration_points(theta, phi, kernel_size, voxel_size, oversample)
     grid, weights = interpolation_weights(points[...,1:], interp_method) # interpolate in xy only
+    weights = normalize_weights(grid, weights, theta, kernel_size[1:])
     kernel = weights2kernel(grid, weights, kernel_size)
 
     return kernel
