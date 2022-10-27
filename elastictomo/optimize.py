@@ -2,6 +2,7 @@
 import jax.numpy as jnp
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_map, tree_reduce, tree_flatten
+import numpy as np
 
 import time
 from types import SimpleNamespace
@@ -65,6 +66,8 @@ def minimize(f, x0, bounds=None, r0=None, b=1e-4, growth=2.0, backtrack=0.1, max
         # rescale search direction
         if autorescale and niter > 0:
             r0 = tree_map(lambda dx_, dg_: (jnp.abs(dx_).mean().clip(rtol) / jnp.abs(dg_).mean().clip(rtol)).item(), dx, dg)
+            r0max = np.max(ravel_pytree(r0)[0])
+            r0 = tree_map(lambda r0_: np.clip(r0_ / r0max, rtol, 1.0), r0)
 
         # line search
         x1, g1, a1, f1, nls, lsconverged = backtracking_line_search(f,f0,g0,x0,r0,a0,b,bounds,backtrack,maxls)
