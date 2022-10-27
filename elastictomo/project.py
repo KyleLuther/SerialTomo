@@ -8,134 +8,101 @@ from jax.scipy.ndimage import map_coordinates
 
 import numpy as np
 from itertools import product
+from functools import partial
 
-def rot_mat(theta):
-    """ Creates Euler rotation matrix
-    Args :
-        theta : (tz,ty,tz) in degrees
-    Returns:
-        R : (3,3) matrix equal to R_z @ R_x @ R_y
-    """
-    theta_z, theta_y, theta_x = tuple(-o*np.pi/180 for o in theta)
-    Rx_ = jnp.array([[1,0,0],[0,jnp.cos(theta_x),-jnp.sin(theta_x)],[0,jnp.sin(theta_x),jnp.cos(theta_x)]])
-    Rz_ = jnp.array([[jnp.cos(theta_z),-jnp.sin(theta_z),0],[jnp.sin(theta_z),jnp.cos(theta_z),0],[0,0,1]])
-    Ry_ = jnp.array([[jnp.cos(theta_y),0,jnp.sin(theta_y)],[0,1,0],[-jnp.sin(theta_y),0,jnp.cos(theta_y)]])
-    R_ = Rz_ @ Rx_ @ Ry_
-    R = jnp.flip(R_,axis=(0,1))
-    return R
-
-def integration_weights(r, kernel_size):
-    """ Creates interpolation weights for r in volume """
-    # get weights to each grid point
-    r = r - 0.5
-    corners = jnp.floor(r)[...,None,:] + jnp.array(tuple(product((0,1),repeat=3))) # ... x 8 x 3
-    weights = jnp.prod(1 - jnp.abs(r[...,None,:] - corners), axis=-1) # ... x 8
-    
-    # mask out of bounds corners
-    mask = jnp.ones(weights.shape)
-    for i in range(3):
-        mask = mask * (corners[...,i] >= 0) * (corners[...,i] < kernel_size[i])
-    weights = (mask*weights)
-    
-    # rescale at the borders
-    weights = weights / weights.sum(-1, keepdims=True).clip(1/8)
-    
-    # map grid points to 1 hot vectors
-    factor_ = jnp.array([kernel_size[1]*kernel_size[2], kernel_size[2], 1]) # 3
-    locs = (corners*factor_).sum(axis=-1).astype(int) # ... x 8
-    ones = one_hot(locs, np.prod(kernel_size)) # ... x 8 x np.prod(kernel_size)
-    
-    # multiply by weights and sum
-    grid_weights = (ones * weights[...,None]).reshape((-1,)+kernel_size) # ... x kernel_size
-    integ_weights = grid_weights.sum(0) # kernel_size
-
-    return integ_weights
-
-def integration_weights_nearest(r, kernel_size):
-    """ Creates interpolation weights for r in volume """
-    # get weights to each grid point
-    r = r - 0.5
-    corners = jnp.floor(r)[...,None,:] + jnp.array(tuple(product((0,1),repeat=3))) # ... x 8 x 3
-    weights = jnp.prod(1 - jnp.abs(r[...,None,:] - corners), axis=-1) # ... x 8
-    
-    # mask out of bounds corners
-    mask = jnp.ones(weights.shape)
-    for i in range(3):
-        mask = mask * (corners[...,i] >= 0) * (corners[...,i] < kernel_size[i])
-    weights = (mask*weights)
-    
-    # rescale at the borders
-    weights = weights / weights.sum(-1, keepdims=True).clip(1/8)
-    
-    # map grid points to 1 hot vectors
-    factor_ = jnp.array([kernel_size[1]*kernel_size[2], kernel_size[2], 1]) # 3
-    locs = (corners*factor_).sum(axis=-1).astype(int) # ... x 8
-    ones = one_hot(locs, np.prod(kernel_size)) # ... x 8 x np.prod(kernel_size)
-    
-    # multiply by weights and sum
-    grid_weights = (ones * weights[...,None]).reshape((-1,)+kernel_size) # ... x kernel_size
-    integ_weights = grid_weights.sum(0) # kernel_size
-
-    return integ_weights
-
-def projection_kernel_(theta=(0.0,0.0,0.0), kernel_size=(16,16,16), voxel_size=(1,1,1), offset=(0.0,0.0), oversample=1, normalize=True):
-    """ Creates projection kernel """
-    # checks
-    assert(len(theta) == len(kernel_size) == len(voxel_size) == 3)
-    assert(len(offset) == 2)
-    
-    # unpack
-    D, H, W = (k*s for k,s in zip(kernel_size, voxel_size)) # physical dimensions of kernel
-    
-    # find endpoints of line segment in physical coordinates
-    R = rot_mat(theta)
-    z = D/2
-    y = R[1,0] / R[0,0] * D/2
-    x = R[2,0] / R[0,0] * D/2
-    
-    # seg len
-    n_points = int(kernel_size[0]*oversample)
-    line_len = 2*jnp.sqrt(x**2 + y**2 + z**2)
-    seg_len = line_len / n_points
-        
+######################
+# integration points #
+######################
+def integration_points(theta: float, phi: float, kernel_size=(16,16,16), voxel_size=(1.0,1.0,1.0), oversample=1) -> jnp.ndarray:
     # create integration points in physical coordinates
-    zs = jnp.linspace(-z, +z, n_points, endpoint=False)
-    zs = zs + (z-zs[-1]) / 2.0
-    
-    ys = jnp.linspace(-y, +y, n_points, endpoint=False)
-    ys = ys + (y-ys[-1]) / 2.0
-    
-    xs = jnp.linspace(-x, +x, n_points, endpoint=False)
-    xs = xs + (x-xs[-1]) / 2.0
-    
-    rs = jnp.stack([zs,ys,xs], axis=-1)
-    
-    # map physical coordinates to grid coordinates
-    rs = rs / jnp.array(voxel_size)
-    rs = rs + jnp.array(kernel_size) / 2.0 + jnp.array([0.0,offset[0],offset[1]])
-    
-    # map grid coordinates to interpolation weights
-    kernel = integration_weights(rs, kernel_size)
+    zs = jnp.arange(-kernel_size[0]/2,kernel_size[0]/2)
+    zs = zs + ((1+2.0*np.arange(oversample))/(2*oversample))[:,None]
+    zs = voxel_size[0] * zs # OxD
 
-    # normalize
-    if normalize:
-        kernel = 1 / kernel.sum() * kernel
-    else: 
-        kernel = seg_len / D * kernel
+    ys = jnp.sin(phi*np.pi/180.0) * jnp.tan(theta*np.pi/180.0) * zs
+    xs = jnp.cos(phi*np.pi/180.0) * jnp.tan(theta*np.pi/180.0) * zs
+    rs = jnp.stack([zs,ys,xs], axis=-1) # OxDx3
     
+    # map to kernel coordinates
+    rs = rs / jnp.array(voxel_size)
+    rs = rs + jnp.array(kernel_size) / 2.0
+    
+    return rs
+
+###############
+# interpolate #
+###############
+def linear_kernel(s: jnp.array) -> jnp.array:
+    """ linear interpolation kernel
+    Ref: https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.61.6893&rep=rep1&type=pdf
+    """
+    s = jnp.abs(s)
+    return jnp.where(s <= 1, 1-s, jnp.zeros(s.shape,dtype=s.dtype))
+
+def quadratic_kernel(s: jnp.array) -> jnp.array:
+    """ quadratic interpolation kernel
+    Ref: https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.61.6893&rep=rep1&type=pdf
+    """
+    def f1(s):
+        return -s**2 + 3/4
+    def f2(s):
+        return 1/2 * s**2 - 3/2 * s + 9/8
+    
+    s = jnp.abs(s)
+    out = jnp.where(s <= 1/2, f1(s), f2(s))
+    out = jnp.where(s > 3/2, jnp.zeros(s.shape,dtype=s.dtype), out)
+    return out
+
+def interpolation_weights(points: 'OxDx2', kernel='quadratic') -> 'OxDxQx2, OxDxQ':
+    # get weights and locations of neighbors
+    if kernel == 'nearest':
+        edges = jnp.array(list(product((0,),(0,))),dtype='int16') # 1x2
+        reference = jnp.floor(points+0.5).astype('int16')# ...x1x2
+        weights = jnp.ones((points.shape[:-1],1)) # ...x1
+    if kernel == 'linear':
+        edges = jnp.array(list(product((0,1),(0,1))),dtype='int16') # 4x2
+        reference = jnp.floor(points).astype('int16')
+        grid = reference[...,None,:] + edges # ...x4x2
+        weights = linear_kernel(grid[...,0]-points[...,None,0]) \
+                * linear_kernel(grid[...,1]-points[...,None,1]) # HxWx4
+    elif kernel == 'quadratic':    
+        edges = jnp.array(list(product((-1,0,1),(-1,0,1))),dtype='int16') # 9x2
+        reference = jnp.floor(points+0.5).astype('int16') #...x2
+        grid = reference[...,None,:] + edges # ...x9x2
+        weights = quadratic_kernel(grid[...,0]-points[...,None,0]) \
+                * quadratic_kernel(grid[...,1]-points[...,None,1]) # ...x9
+    else:
+        raise ValueError(f'Unrecognized kernel: {kernel}, must be "linear" or "quadratic"')
+    
+    return grid, weights
+
+##########
+# kernel #
+##########
+def weights2kernel(grid: 'OxDxQx2', weights: 'OxDxQ', kernel_size: 'D,H,W') -> 'DxHxW':
+    oversample = grid.shape[0]
+    kernel = jnp.zeros((oversample,)+kernel_size)
+    kernel = kernel.at[jnp.arange(oversample)[:,None,None], jnp.arange(kernel_size[0])[None,:,None], grid[...,0], grid[...,1]].set(weights)
+    kernel = kernel.sum(0)
     return kernel
 
-def projection_kernel(thetas, kernel_size=(16,16,16), voxel_size=(1,1,1), offset=(0.0,0.0), oversample=1, normalize=True):
-    return vmap(projection_kernel_, in_axes=(0,None,None,None,None,None))(thetas, kernel_size, voxel_size, offset, oversample, normalize)
+def create_kernel_(theta: float, phi: float, kernel_size: 'D,H,W', voxel_size: 'd,h,w', oversample: int, interp_method: str) -> 'DxHxW':
+    points = integration_points(theta, phi, kernel_size, voxel_size, oversample)
+    grid, weights = interpolation_weights(points[...,1:], interp_method) # interpolate in xy only
+    kernel = weights2kernel(grid, weights, kernel_size)
 
-def get_kernel_size(Z, thetas):
-    """ Returns smallest kernel size that contains full kernel """
-    Y = int(np.ceil(1 + Z * np.max(np.abs(np.tan(np.pi/180 * thetas[:,2])))))
-    X = int(np.ceil(1 + Z * np.max(np.abs(np.tan(np.pi/180 * thetas[:,1])))))
+    return kernel
+
+@partial(jax.jit, static_argnums=(2,3,4,5))
+def create_kernel(thetas: 'K', phis: 'K', kernel_size: 'D,H,W', voxel_size=(1.0,1.0,1.0), oversample=1, interp_method='quadratic') -> 'KxDxHxW':
+    return vmap(create_kernel_,in_axes=(0,0,None,None,None,None))(thetas, phis, kernel_size, voxel_size, oversample, interp_method)
+
+###########
+# project #
+###########
+@partial(jax.jit, static_argnums=(3,4,5,6))
+def project(x: 'DxHxW', thetas: 'K', phis: 'K', kernel_size=(16,16,16), voxel_size=(1,1,1), oversample=1, interp_method='quadratic') -> 'KxHxW':
+    kernel = create_kernel(thetas, phis, kernel_size, voxel_size, oversample, interp_method)
+    y = jax.lax.conv(x[None], kernel, window_strides=(1,1), padding='valid')[0]
     
-    return Y,X
-
-def project(x, thetas, kernel_size=(16,16,16), voxel_size=(1,1,1), oversample=1, normalize=True):
-    P = projection_kernel(thetas, kernel_size=kernel_size, voxel_size=voxel_size, oversample=oversample, normalize=normalize)
-    y = lax.conv(x[None], P, window_strides=(1,1), padding='valid')[0]
     return y
