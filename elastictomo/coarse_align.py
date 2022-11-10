@@ -41,6 +41,32 @@ def align_stack(stack: 'KxHxW uint8', downsample=10, ref_idx=None, n_features=30
     info.H = H
     return aligned, info
 
+def align_stack_dual(stacka: 'AxHxW', stackb: 'BxHxW'):
+    # align each stack
+    ref_a = stacka.shape[0] // 2
+    aligneda, infoa = align_stack(stacka, method='sequential')
+
+    ref_b = stackb.shape[0] // 2
+    alignedb, infob = align_stack(stackb, method='sequential')
+    
+    # align b to a
+    _, infoab = align_stack(np.stack([stacka[ref_a],stackb[ref_b]]), ref_idx=0)
+    
+    H = np.einsum('ij,tjk->tik',infoab.H[1],infob.H)
+    alignedb = transform_stack(stackb, H)
+
+    # merge
+    aligned = np.concatenate([aligneda,alignedb])
+    
+    # log
+    info = SimpleNamespace()
+    info.infoa = infoa
+    info.infob = infob
+    info.infoab = infoab
+    info.H = np.concatenate([infoa.H, H])
+    
+    return aligned, info
+
 ##################
 # Transformation #
 ##################
@@ -145,7 +171,7 @@ def register_pair(ref: 'HxW uint8', mov: 'HxW uint8', n_features=3000, lowe_rati
         mask = mask[:,0]
     except:
         H = np.eye(3)
-        mask = np.zeros(points1.shape[0])
+        mask = np.zeros(points1.shape[0],dtype='uint8')
     
     # logging info
     info = SimpleNamespace()
