@@ -6,16 +6,25 @@ from jax.scipy.ndimage import map_coordinates
 import numpy as np
 from itertools import product
 from tqdm import tqdm, trange
+from jax.numpy.fft import fftn, fftfreq, ifftn
 
 from elastictomo.optimize import minimize
 
 ################
 # registration #
 ################
-def register_pair(ref: 'HxW float32', mov: 'HxW float32', grid_size=(2,2), lam=1.0, init_position=(0,0), method='interpolate_energy', kernel='quadratic', **kwargs):
+def register_pair(ref: 'HxW float32', mov: 'HxW float32', grid_size=(2,2), lam=1.0, cutoff_freq=None, init_position=(0,0), bounds=None, method='interpolate_energy', kernel='quadratic', **kwargs):
     # checks
     assert((ref.ndim == 2) and (mov.ndim == 2))
     ref, mov = jnp.array(ref), jnp.array(mov)
+    
+    # preprocess
+    ref = (ref - ref.mean()) / ref.std()
+    mov = (mov - mov.mean()) / mov.std()
+    if cutoff_freq:
+        ref = high_pass(ref, cutoff_freq)
+        mov = high_pass(mov, cutoff_freq)
+
     
     # initialize displacements to be in center + user provided displacement
     init_offset = jnp.array((mov.shape[0] - ref.shape[0], mov.shape[1] - ref.shape[1]), dtype='float32') / 2.0
@@ -24,23 +33,40 @@ def register_pair(ref: 'HxW float32', mov: 'HxW float32', grid_size=(2,2), lam=1
     # optimize displacements
     energy_ = lambda displacements: energy(displacements, ref, mov, lam, method, kernel)
     fun = jit(value_and_grad(energy_))
-    displacements, info = minimize(fun, displacements, **kwargs)
+    displacements, info = minimize(fun, displacements, bounds=bounds, **kwargs)
     
     return displacements, info
+
+#################
+# preprocessing #
+#################
+def high_pass(img, freq):
+    f = fftn(img)
+    w = jnp.sqrt((fftfreq(f.shape[0])**2)[:,None] + (fftfreq(f.shape[1])**2)[None,:])
+    q = (1 - jnp.exp(-(w/freq)**2))
+    return jnp.real(ifftn(f*q)) 
+
+# def high_pass(img, freq):
+#     f = rfftn(img)
+#     w = jnp.sqrt((fftfreq(img.shape[0])**2)[:,None] + (rfftfreq(img.shape[1])**2)[None,:])
+#     q = (1 - jnp.exp(-(w/freq)**2))
+#     # return q
+#     # return jnp.real(ifftn(f*q))  
+#     return irfftn(f*q), q
     
 ##################
 # transformation #
 ##################
-def transform_stack(mov: 'Kxhxw array', displacements: 'KxHxWx2 array', N) -> 'KxNxM array':
-    out = np.zeros((mov.shape[0], (displacements.shape[1]-1)*N, (displacements.shape[2]-1)*N))
+def transform_stack(mov: 'Kxhxw array', displacements: 'KxHxWx2 array', grid_size) -> 'KxNxM array':
+    out = np.zeros((mov.shape[0], grid_size[0], grid_size[1]))
     for i in trange(mov.shape[0]):
-        out[i] = np.array(transform_img(mov[i], displacements[i], N))
+        out[i] = np.array(transform_img(mov[i], displacements[i], grid_size))
     return out
         
-def transform_img(mov: 'hxw array', displacements: 'HxWx2 array', N) -> 'NxM array':
-    upsampled = upsample_displacements(displacements, N)
-    corners, weights = apply_displacements(mov, upsampled)
-    return (weights*corners).sum(-1)
+def transform_img(mov: 'hxw array', displacements: 'HxWx2 array', grid_size) -> 'NxM array':
+    upsampled = jax.image.resize(displacements, (grid_size[0],grid_size[1],2), method='cubic')
+    interp, weights, in_bounds = interpolate(mov, upsampled, kernel='linear')
+    return (weights*interp).sum(-1)
 
 #########################
 # interpolation kernels #
@@ -84,6 +110,10 @@ def interpolate(img: 'NxM array', displacements: 'HxWx2 array', kernel='quadrati
         Q=4 for linear kernel, Q=9 for quadratic kernel
     """
     # get weights and locations of neighbors
+    if kernel == 'nearest':
+        edges = jnp.array(list(product((0,),(0,))),dtype='int16') # 1x2
+        reference = jnp.floor(displacements+0.5).astype('int16')
+        weights = jnp.ones((displacements.shape[0],displacements.shape[1],1)) # HxWx1
     if kernel == 'linear':
         edges = jnp.array(list(product((0,1),(0,1))),dtype='int16') # 4x2
         reference = jnp.floor(displacements).astype('int16')
