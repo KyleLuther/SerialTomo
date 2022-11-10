@@ -91,7 +91,7 @@ def normalize_weights(grid: 'OxDxQx2', weights: 'OxDxQ', theta: float, img_size:
     # handle out of bounds
     in_bounds = (grid[...,0] >= 0) * (grid[...,0] <= img_size[0]-1) *\
                 (grid[...,1] >= 0) * (grid[...,1] <= img_size[1]-1)
-    norm = (in_bounds * weights).sum(-1,keepdims=True)
+    norm = (in_bounds * weights).sum(-1,keepdims=True) * grid.shape[1]
     
     # correct for segment length
     norm = jnp.cos(theta*np.pi/180.) * norm
