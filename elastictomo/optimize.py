@@ -1,4 +1,4 @@
-""" Gradient-descent minimization with automatic learning rate selection. Logging inspired by Optim.jl"""
+""" Gradient-descent minimization with automatic learning rate selection. Interface inspired by scipy optimize and julia's Optim.jl"""
 import jax.numpy as jnp
 from jax.flatten_util import ravel_pytree
 from jax.tree_util import tree_map, tree_reduce, tree_flatten, tree_leaves, tree_unflatten
@@ -9,19 +9,20 @@ from types import SimpleNamespace
 from tqdm import tqdm
 import sys
 
-def minimize(f, x0, a0=None, bounds=None, b=1e-4, growth=2.0, backtrack=0.1, maxiter=50, verbose=True, callback=None):
-    """ Gradient descent on f, starting with initial condition x0
+def minimize(f, x0, a0=None, bounds=None, b=0.0, growth=2.0, backtrack=0.1, maxiter=50, verbose=True, callback=None):
+    """ Run alternating gradient descent on f, starting with initial condition x0. 
+
     Args:
         f: callable that returns (loss, grad)
         x0: pytree of initial parameters
         a0: pytree of initial step size parameters
-        bounds: pytree of bounds for the parameters
+        bounds: pytree of bounds for the parameters. Either None or a pytree containing (low, high) for every element in x0
         b: float, tolerance in Armijo rule for backtracking line search
         growth: float, factor by which to increase step size
         backtrack: float, factor by which to decrease step size
         maxiter: int, max number of gradient steps
         verbose: bool, display information about minimization
-        callback: function which takes in x0, can be used for logging
+        callback: function with argument x0, can be used for logging
         
     Returns:
         x: pytree of final parameters
@@ -30,13 +31,14 @@ def minimize(f, x0, a0=None, bounds=None, b=1e-4, growth=2.0, backtrack=0.1, max
     # initialize
     t0 = time.time()
     x0 = tree_map(lambda x: jnp.array(x), x0)
-    if bounds: x0 = tree_map(lambda x, bnd: x.clip(bnd[0],bnd[1]), x0, bounds)
+    if bounds is not None: bounds = tree_map(lambda x, b: jnp.array(b), x0, bounds)
+    if bounds is not None: x0 = tree_map(lambda x, bnd: x.clip(bnd[0],bnd[1]), x0, bounds)
     if a0 is None: a0 = tree_map(lambda x: 1.0, x0)
     f0, g0 = f(x0)
     
     # logging
     info = {}
-    if bounds:
+    if bounds is not None:
         at_min = tree_map(lambda x, g, b: ((x==b[0]) & (g > 0)).astype(x.dtype), x0, g0, bounds)
         at_max = tree_map(lambda x, g, b: ((x==b[1]) & (g < 0)).astype(x.dtype), x0, g0, bounds)
         gnorm = tree_map(lambda g,low,high: jnp.linalg.norm(g*low*high).item(), g0, at_min, at_max)
@@ -70,10 +72,10 @@ def minimize(f, x0, a0=None, bounds=None, b=1e-4, growth=2.0, backtrack=0.1, max
                 cannot_increase = tree_update(cannot_increase, False, param)
         
         # logging 
-        if bounds:
+        if bounds is not None:
             at_min = tree_map(lambda x, g, b: ((x==b[0]) & (g > 0)).astype(x.dtype), x0, g0, bounds)
             at_max = tree_map(lambda x, g, b: ((x==b[1]) & (g < 0)).astype(x.dtype), x0, g0, bounds)
-            gnorm = tree_map(lambda g,low,high: jnp.linalg.norm(g*low*high).item(), g0, at_min, at_max)
+            gnorm = tree_map(lambda g,low,high: jnp.linalg.norm(g*(1-low)*(1-high)).item(), g0, at_min, at_max)
         else: 
             gnorm = tree_map(lambda g: jnp.linalg.norm(g).item(), g0)
             
@@ -85,7 +87,13 @@ def minimize(f, x0, a0=None, bounds=None, b=1e-4, growth=2.0, backtrack=0.1, max
         info['accepted'] = info.get('accepted', []) + [accepted]
 
         # update display
-        pbar.set_postfix({'f': f0, '|g|': np.sqrt(tree_reduce(lambda u,v: u+v, tree_map(lambda g: g**2, gnorm)))})
+        postfix = {'f': f0}
+        for i, gn in enumerate(tree_leaves(gnorm)):
+            postfix['|g{i}|'] = "{gn}:.3e"
+            if i == 5:
+                break
+        pbar.set_postfix(postfix)
+        # pbar.set_postfix({'f': f0, '|g|': np.sqrt(tree_reduce(lambda u,v: u+v, tree_map(lambda g: g**2, gnorm)))})
         
         # callback
         if callback is not None:
@@ -120,8 +128,14 @@ def minimize(f, x0, a0=None, bounds=None, b=1e-4, growth=2.0, backtrack=0.1, max
 
             # parameter info
             tqdm.write(f' * parameter info', file=sys.stderr)
-            for i,(x_,g_,a_) in enumerate(zip(tree_leaves(x0), tree_leaves(g0), tree_leaves(a0))):
-                tqdm.write(f"   p{i}: shape={jnp.shape(x_)}, |x|={jnp.linalg.norm(x_):.3e}, |g|={jnp.linalg.norm(g_):.3e}, eta={a_:.3e}, updates={sum([a[i] for a in info.accepted])}", file=sys.stderr)
+            if bounds is not None:
+                at_min = tree_map(lambda x, g, b: ((x==b[0]) & (g > 0)).astype(x.dtype), x0, g0, bounds)
+                at_max = tree_map(lambda x, g, b: ((x==b[1]) & (g < 0)).astype(x.dtype), x0, g0, bounds)
+                gnorm = tree_map(lambda g,low,high: jnp.linalg.norm(g*(1-low)*(1-high)).item(), g0, at_min, at_max)
+            else: 
+                gnorm = tree_map(lambda g: jnp.linalg.norm(g).item(), g0)
+            for i,(x_,g_,a_) in enumerate(zip(tree_leaves(x0), tree_leaves(gnorm), tree_leaves(a0))):
+                tqdm.write(f"   p{i}: shape={jnp.shape(x_)}, |x|={jnp.linalg.norm(x_):.3e}, |g|={g_:.3e}, eta={a_:.3e}, updates={sum([a[i] for a in info.accepted])}", file=sys.stderr)
             tqdm.write(f'', file=sys.stderr)
 
             # work counters
@@ -156,10 +170,10 @@ def update_param(f, f0, g0, x0, a0, b, bounds, growth, backtrack, which):
     x0_ = tree_leaves(x0)[which]
     g0_ = tree_leaves(g0)[which]
     a0_ = tree_leaves(a0)[which]
-    if bounds: bounds_ = tree_leaves(bounds)[which]
+    if bounds is not None: bounds_ = tree_leaves(bounds)[which]
     
     # expected decrease
-    if bounds:
+    if bounds is not None:
         at_min = ((x0_==bounds_[0]) & (g0_ > 0)).astype(x0_.dtype)
         at_max = ((x0_==bounds_[1]) & (g0_ < 0)).astype(x0_.dtype)
         expected_decrease = (g0_**2 * (1-at_min) * (1-at_max)).sum()
@@ -168,7 +182,7 @@ def update_param(f, f0, g0, x0, a0, b, bounds, growth, backtrack, which):
         
     # trial update
     x1_ = x0_-a0_*g0_
-    if bounds:
+    if bounds is not None:
         x1_ = x1_.clip(bounds_[0],bounds_[1])
     
     # conditions
@@ -178,12 +192,12 @@ def update_param(f, f0, g0, x0, a0, b, bounds, growth, backtrack, which):
     else:
         x1 = tree_update(x0, x1_, which)
         f1, g1 = f(x1) # evaluate
-        if f1 >= f0 - b*a0_*expected_decrease: # reject and grow step size
-            a0 = tree_update(a0, backtrack*a0_, which)
-            x0, a0, f0, g0, accepted, nfeval = x0, a0, f0, g0, False, 1
-        else: # accept and grow step size
+        if f1 <= f0 - b*a0_*expected_decrease: # accept and grow step size 
             a0 = tree_update(a0, growth*a0_, which)
             x0, a0, f0, g0, accepted, nfeval = x1, a0, f1, g1, True, 1
+        else: # reject and shrink step size
+            a0 = tree_update(a0, backtrack*a0_, which)
+            x0, a0, f0, g0, accepted, nfeval = x0, a0, f0, g0, False, 1
       
     return x0, f0, g0, a0, accepted, nfeval
 
