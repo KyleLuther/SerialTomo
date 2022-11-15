@@ -23,6 +23,8 @@ def viewstack(*stacks, low=1.0, high=99.0, size=1, rescale=False, view='xy'):
 def stackpicker(stack, low=1.0, high=99.0, size=1, rescale=False, view='xy'):
     # convert to numpy
     stack = np.array(stack)
+    if stack.ndim == 2:
+        stack = stack[None]
     
     # checks
     assert(low >= 0.0 and low <= 100.0)
@@ -49,6 +51,10 @@ def stackcurtain(stack1, stack2, low=1.0, high=99.0, size=1, rescale=True, view=
     # convert to numpy
     stack1 = np.array(stack1)
     stack2 = np.array(stack2)
+    
+    if stack1.ndim == 2 and stack2.ndim == 2:
+        stack1 = stack1[None]
+        stack2 = stack2[None]
     
     # checks
     assert(low >= 0.0 and low <= 100.0)
