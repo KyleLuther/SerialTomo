@@ -34,6 +34,11 @@ def minimize(f, x0, a0=None, bounds=None, b=0.0, growth=2.0, backtrack=0.1, maxi
     """
     # initialize
     t0 = time.time()
+    
+    # progress bar
+    nparams = len(tree_leaves(x0))
+    pbar = tqdm(range(maxiter), leave=True, disable=not verbose, desc=f'minimizing over {nparams} param group{"s" if nparams > 1 else ""}')
+    
     x0 = tree_map(lambda x: jnp.array(x), x0)
     if bounds is not None: bounds = tree_map(lambda x, b: jnp.array(b), x0, bounds)
     if bounds is not None: x0 = tree_map(lambda x, bnd: x.clip(bnd[0],bnd[1]), x0, bounds)
@@ -51,7 +56,8 @@ def minimize(f, x0, a0=None, bounds=None, b=0.0, growth=2.0, backtrack=0.1, maxi
     nparams = len(tree_leaves(x0))
     cannot_decrease = tree_map(lambda x: False, x0)
     cannot_increase = tree_map(lambda x: False, x0)
-    for niter in (pbar := tqdm(range(maxiter), leave=True, disable=not verbose, desc=f'minimizing over {nparams} param{"s" if nparams > 1 else ""}')):
+    # for niter in (pbar := tqdm(range(maxiter), leave=True, disable=not verbose, desc=f'minimizing over {nparams} param group{"s" if nparams > 1 else ""}')):
+    for niter in pbar:
         # update each param
         nfeval = 0
         accepted = []
