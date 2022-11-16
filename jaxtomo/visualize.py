@@ -12,7 +12,21 @@ from matplotlib.collections import LineCollection
 #######################
 # stack visualization #
 #######################
-def viewstack(*stacks, low=1.0, high=99.0, size=1, rescale=False, view='xy'):
+def viewstack(*stacks, min=1.0, max=99.0, size=1, rescale=False, view='xy'):
+    """ Visualize 3D stacks in Jupyter Notebook
+    
+    Args
+        stacks: depth x height x width. If two stacks are provided, overlay with a curtain
+        min: float in [0.0,100.0). clip small values in stack by this percentile
+        max: float in (0.0,100.0]. clip large values in stack by this percentile
+        size: float, resize images in xy
+        view: 'xy' or 'yz' or 'xz', which axes to display
+        
+    Returns
+        jupyter widget
+    """
+        
+    low, high = min, max
     if len(stacks) == 1:
         return stackpicker(stacks[0], low, high, size, rescale, view)
     elif len(stacks) == 2:
