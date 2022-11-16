@@ -11,7 +11,7 @@ import time
 # Alignment: Preprocess-Register-Transform #
 ###########################################
 def align_stack(stack: 'KxHxW uint8', ref_idx=None, downsample=10, n_features=3000, lowe_ratio=0.75, method='sequential', verbose=True, **kwargs):
-    """ Aligns stack with SIFT + RANSAC + homographic transformation
+    """ Aligns stack with SIFT + RANSAC + projective transformation
         
     Args
         stack: ntilts x height x width array to align
@@ -38,7 +38,7 @@ def align_stack(stack: 'KxHxW uint8', ref_idx=None, downsample=10, n_features=30
     
     # logging info
     if verbose:
-        tqdm.write(f'performing SIFT-based {method}-alignment of {stack.shape} {stack.dtype} stack to section {ref_idx} on CPU...', file=sys.stderr)
+        tqdm.write(f'Projective alignment of {stack.shape} {stack.dtype} stack to section {ref_idx} with SIFT-based {method}-registration...', file=sys.stderr)
     
     # preprocess
     pre = downsample_stack(stack, downsample, verbose)
@@ -68,7 +68,11 @@ def transform_stack(stack: 'KxHxW', H: 'Kx3x3', verbose=True) -> 'KxHwW':
     
     out = np.zeros(stack.shape, dtype=stack.dtype)
     for i in trange(stack.shape[0], desc='transforming', disable=not verbose):
-        out[i] = cv2.warpPerspective(stack[i], H[i], stack[i].shape[::-1], flags=1, borderValue = stack[i].mean()) # linear interpolation
+        if stack[i].dtype == np.float32: # CV2 doesn't work with float32
+            img = stack[i].astype(np.float64)
+            out[i] = cv2.warpPerspective(img, H[i], stack[i].shape[::-1], flags=1, borderValue = img.mean()) # linear interpolation
+        else:
+            out[i] = cv2.warpPerspective(stack[i], H[i], stack[i].shape[::-1], flags=1, borderValue = stack[i].mean()) # linear interpolation
         
     return out
 
@@ -190,6 +194,14 @@ def pclip(img, low=1.0, high=99.0):
     low_ = np.percentile(img, low)
     high_ = np.percentile(img, high)
     img = np.clip(img, low_, high_)
+    return img
+
+def to_uint8(img, low=0.1, high=99.9, rescale=True):
+    img = pclip(img, low, high)
+    if rescale:
+        img = img - img.min()
+        img = 255. * img / img.max()
+    img = img.astype('uint8')
     return img
 
 def normalize_img(img: 'HxW array', clip_percentile=1.0) -> 'HxW uint8 array':
