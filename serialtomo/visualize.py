@@ -188,7 +188,7 @@ def swap_axes(stack, axes):
     if axes == 'xy': pass
     elif axes == 'xz': stack = stack.transpose(1,0,2)
     elif axes == 'yz': stack = stack.transpose(2,0,1)
-    else: raise ValueError(f'unrecognized axes order {axes}')
+    else: raise ValueError(f'unrecognized axes "{axes}". Only accepted values are "xy", "xz" or "yz".')
     return stack
 
 def pclip(img, low=1.0, high=99.0):
