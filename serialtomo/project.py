@@ -9,14 +9,14 @@ from functools import partial
 ###########
 # project #
 ###########
-@partial(jax.jit, static_argnums=(3,4,5))
-def project(volume: 'NDArray[D,H,W]', tilt_angles: 'NDArray[K,]', tilt_axis: 'NDArray[K,]', max_theta=60.0, voxel_size=(1,1,1), interp_method='quadratic') -> 'NDArray[K,H,W]':
+# @partial(jax.jit, static_argnums=(3,4,5))
+def project(volume: 'NDArray[D,H,W]', tilt_angles: 'NDArray[K,]', tilt_axes: 'NDArray[K,]', max_theta=60.0, voxel_size=(1,1,1), interp_method='quadratic') -> 'NDArray[K,H,W]':
     """ Differentiable stretched radon transform 
     
     Args
         volume: (depth, height, width) volume through which we project
         tilt_angles: (degrees) tilt angles
-        tilt_axis: (degrees) rotation of the tilt axis in the xy-plane of the volume
+        tilt_axes: (degrees) rotation of the tilt axis in the xy-plane of the volume
         max_theta: (degrees) largest theta that will be given to project
             This is necessary as JAX requires knowing sizes of all tensor in order to JIT-compile
             Thetas are clipped to be within (-min_theta,max_theta)
@@ -43,13 +43,14 @@ def project(volume: 'NDArray[D,H,W]', tilt_angles: 'NDArray[K,]', tilt_axis: 'ND
         a series of sparse convolutions at each depth in the volume, then offset these and 
         sum to generate a tilt
     """
-    # ensure jnp arrays
-    # thetas, phis = jnp.array(theta)[None], jnp.array(phi)[None]
-    thetas, phis = jnp.array(tilt_angles), jnp.repeat(jnp.array(tilt_axis),len(tilt_angles))
-    # if jnp.argmax(jnp.abs(tilt_angles) > max_theta):
-        # print('WARNING: tilt 
+    # convert to jax arrays if needed
+    volume, thetas, phis = jnp.array(volume), jnp.array(tilt_angles), jnp.array(tilt_axes)
+    if phis.ndim == 0:
+        phis = jnp.repeat(phis,len(thetas))
+    
+    # checks
 
-    # compute kernel size
+    # compute kernel size and clip thetas
     thetas = jnp.clip(thetas,-max_theta,max_theta)
     kernel_size = get_minimal_kernel_size(volume.shape[0], max_theta)
     
@@ -64,10 +65,12 @@ def project(volume: 'NDArray[D,H,W]', tilt_angles: 'NDArray[K,]', tilt_axis: 'ND
         return sparse_conv(volume,kernel,offset,kernel_size[1:])
     projection = lax.map(sparse_conv_, (sparse_kernel, corners))
     
+    # foreshortening
+    
     return projection
 
 def sparse_conv(volume: 'NDArray[D,H,W]', kernel: 'NDArray[D,S,S]', offsets: 'NDArray[D,2]', dense_kernel_size: '(h,w)')-> 'NDArray[D,H,W]':
-    """ Apply sparse convolutional with same padding
+    """ Apply sparse convolution with shifts
     
     Args
         volume: (depth, height, width) volume through which we project
