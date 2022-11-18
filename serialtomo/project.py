@@ -11,7 +11,7 @@ from functools import partial
 ###########
 # @partial(jax.jit, static_argnums=(3,4,5))
 def project(volume: 'NDArray[D,H,W]', tilt_angles: 'NDArray[K,]', tilt_axes: 'NDArray[K,]', max_theta=60.0, voxel_size=(1,1,1), interp_method='quadratic') -> 'NDArray[K,H,W]':
-    """ Differentiable stretched radon transform 
+    """ Differentiable radon transform 
     
     Args
         volume: (depth, height, width) volume through which we project
@@ -59,18 +59,21 @@ def project(volume: 'NDArray[D,H,W]', tilt_angles: 'NDArray[K,]', tilt_axes: 'ND
     sparse_kernel = sparse_kernel[0]
     corners = grid[0,:,:,0,0,:]
     
-    # apply sparse_conv sequentially
-    def sparse_conv_(pair):
-        kernel,offset = pair
-        return sparse_conv(volume,kernel,offset,kernel_size[1:])
-    projection = lax.map(sparse_conv_, (sparse_kernel, corners))
+    projection = sparse_conv2d(volume,sparse_kernel,corners,kernel_size[1:])
     
-    # foreshortening
+    # # apply sparse_conv sequentially
+    # def sparse_conv_(pair):
+    #     kernel,offset = pair
+    #     return sparse_conv(volume,kernel,offset,kernel_size[1:])
+    # projection = lax.map(sparse_conv_, (sparse_kernel, corners))
     
     return projection
 
-def sparse_conv(volume: 'NDArray[D,H,W]', kernel: 'NDArray[D,S,S]', offsets: 'NDArray[D,2]', dense_kernel_size: '(h,w)')-> 'NDArray[D,H,W]':
-    """ Apply sparse convolution with shifts
+######################
+# offset convolution #
+######################
+def sparse_conv2d(img: 'NDArray[D,H,W]', kernel: 'NDArray[K,D,S,S]', offsets: 'NDArray[K,D,2]', dense_kernel_size: '(h,w)')-> 'NDArray[K,H,W]':
+    """ Apply convolution with different integer shifts for each output, input kernel
     
     Args
         volume: (depth, height, width) volume through which we project
@@ -79,15 +82,46 @@ def sparse_conv(volume: 'NDArray[D,H,W]', kernel: 'NDArray[D,S,S]', offsets: 'ND
         dense_kernel_size (height, width) extent of the full dense kernel
         
     Returns
-        conv: Result of applying sparse conv to volume. Equivalent to applying dense conv defined by (kernel, offsets)
+        conv: Result of offset sparse conv to volume. Equivalent to applying dense conv defined by (kernel, offsets)
     """
+    def f(carry, x):
+        img, kernel, offsets = x
+        out = sparse_conv2d(img, kernel, offsets, dense_kernel_size)
+        return carry + out, None
+    
+    init = jnp.zeros((kernel.shape[0], img.shape[1], img.shape[2]))
+    res,_ = lax.scan(f, init, (img, kernel.transpose(1,0,2,3), offsets.transpose(1,0,2)))
+    return res
+
+def sparse_conv2d_(img: 'NDArray[H,W]', kernel: 'NDArray[K,S,S]', offsets: 'NDArray[K,2]', dense_kernel_size: '(h,w)')-> 'NDArray[K,H,W]':
     padh = dense_kernel_size[0]-1
     padw = dense_kernel_size[1]-1
-    padded = jnp.pad(volume, ((0,0), (padh//2,padh-padh//2), (padw//2, padw-padw//2)))
-    extract_size = (volume.shape[1]+kernel.shape[1]-1, volume.shape[2]+kernel.shape[2]-1)
-    shifted = vmap(lax.dynamic_slice,in_axes=(0,0,None))(padded,offsets,extract_size)
-    p = lax.conv(shifted[None], kernel[None], window_strides=(1,1), padding='valid')[0,0]
-    return p
+    padded = jnp.pad(img, ((padh//2,padh-padh//2), (padw//2, padw-padw//2)))
+    c = lax.conv(padded[None,None], kernel[:,None], window_strides=(1,1), padding='valid')[0]
+    shifted = vmap(lax.dynamic_slice,in_axes=(0,0,None))(c,offsets,img.shape)
+    
+    return shifted
+
+
+# def sparse_conv(volume: 'NDArray[D,H,W]', kernel: 'NDArray[D,S,S]', offsets: 'NDArray[D,2]', dense_kernel_size: '(h,w)')-> 'NDArray[D,H,W]':
+#     """ Apply sparse convolution with shifts
+    
+#     Args
+#         volume: (depth, height, width) volume through which we project
+#         kernel: (depth, sparse_height, sparse_width) kernel we apply
+#         offsets: height, width offset of the kernel at every depth 
+#         dense_kernel_size (height, width) extent of the full dense kernel
+        
+#     Returns
+#         conv: Result of applying sparse conv to volume. Equivalent to applying dense conv defined by (kernel, offsets)
+#     """
+#     padh = dense_kernel_size[0]-1
+#     padw = dense_kernel_size[1]-1
+#     padded = jnp.pad(volume, ((0,0), (padh//2,padh-padh//2), (padw//2, padw-padw//2)))
+#     extract_size = (volume.shape[1]+kernel.shape[1]-1, volume.shape[2]+kernel.shape[2]-1)
+#     shifted = vmap(lax.dynamic_slice,in_axes=(0,0,None))(padded,offsets,extract_size)
+#     p = lax.conv(shifted[None], kernel[None], window_strides=(1,1), padding='valid')[0,0]
+#     return p
 
 #############################
 # helper with kernel sizing #
