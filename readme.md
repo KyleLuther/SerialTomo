@@ -29,7 +29,7 @@ grad_tilt_axis = jax.grad(loss, argnums=2)
 **SerialTomo** provides other functions which are useful for real-world tomography
 -  ```minimize``` Gradient descent with auto learning rate tuning
 -  ```alignstacks``` Coarsely aligns multiple adjacent tilt series into a *linogram* representation. Uses SIFT to find correspondences and RANSAC to estimate a projective transformation between pairs.
-- ```viewstack``` Interactive scrolling through 3D stacks in a Jupyter Notebook. Built on stack of *stackview* which in turn uses *ipycanvas* and *ipywidgets*
+- ```viewstack``` Interactive scrolling through 3D stacks in a Jupyter Notebook. Built on top of *stackview* which in turn uses *ipycanvas* and *ipywidgets*
 
 ## Getting started
 Check out the colab notebook
