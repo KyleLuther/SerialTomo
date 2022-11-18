@@ -32,5 +32,5 @@ grad_tilt_axis = jax.grad(loss, argnums=2)
 - ```viewstack``` Interactive scrolling through 3D stacks in a Jupyter Notebook. Built on stack of *stackview*, *ipycanvas* and *ipywidgets*
 
 ## Getting started
-Colab for GPU capabilities.  
-Binder for more complete interactive workflow
+Check out the colab notebook
+- [Simulating and Reconstructing a dual-tilt axes series](https://colab.research.google.com/drive/1-abF8gtyAbr59KIZNHtitKbP2HuGbft3?usp=sharing)
