@@ -27,3 +27,7 @@ grad_tilt_axis = jax.grad(loss, argnums=2)
 -  ```minimize``` Gradient descent with auto learning rate tuning
 -  ```alignstacks``` Coarsely aligns multiple adjacent tilt series into a *linogram* representation. Uses SIFT to find correspondences and RANSAC to estimate a projective transformation between pairs.
 - ```viewstack``` Interactive scrolling through 3D stacks in a Jupyter Notebook. Built on stack of *stackview*, *ipycanvas* and *ipywidgets*
+
+## Getting started
+Colab for GPU capabilities.  
+Binder for more complete interactive workflow
