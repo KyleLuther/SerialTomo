@@ -114,8 +114,8 @@ def register_pair(ref: 'HxW uint8', mov: 'HxW uint8', downsample=10, n_features=
     assert((lowe_ratio > 0.0) and (lowe_ratio <= 1.0))
     
     # downsample for speed
-    ref = downscale_local_mean(ref, downsample)
-    mov = downscale_local_mean(mov, downsample)
+    ref = downscale_local_mean(ref, (downsample,downsample))
+    mov = downscale_local_mean(mov, (downsample,downsample))
     
     # normalize images
     im1 = normalize_img(mov)
