@@ -16,9 +16,9 @@ def alignstacks(stacks, ref_idx=None, downsample=10, n_features=3000, lowe_ratio
     Args
         stacks: list of [ntilts x height x width arrays] to align
         ref_idx: int, which stack to register to
-        downsample: int, downsample images before registration to improve speed
+        downsample: int, factor by which to downsample images before registration to improve speed
         n_features: int, max number of SIFT features per section
-        lowe_ratio: float between 0 and 1. Lower means more aggressive filtering of matches with low confidence
+        lowe_ratio: float between 0 and 1. Lower means more aggressive filtering of SIFT matches before computing the transform
         verbose: bool, print information while aligning
             
     Returns
@@ -27,8 +27,8 @@ def alignstacks(stacks, ref_idx=None, downsample=10, n_features=3000, lowe_ratio
         
     Notes
         Registration is performed sequentially within stacks
-        Then the central slice of each stack is registered and these transforms are all composed so
-        that the stack is aligned to the central section of the central stack
+        Then the central slice of each stack is registered to each other
+        The transforms all compose so the stack is aligned to the central section of the central stack
     
     """
     # logging info
