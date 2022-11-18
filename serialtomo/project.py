@@ -9,7 +9,7 @@ from functools import partial
 ###########
 # project #
 ###########
-# @partial(jax.jit, static_argnums=(3,4,5))
+@partial(jax.jit, static_argnums=(3,4,5))
 def project(volume: 'NDArray[D,H,W]', tilt_angles: 'NDArray[K,]', tilt_axes: 'NDArray[K,]', max_theta=60.0, voxel_size=(1,1,1), interp_method='quadratic') -> 'NDArray[K,H,W]':
     """ Differentiable radon transform 
     
@@ -86,7 +86,7 @@ def sparse_conv2d(img: 'NDArray[D,H,W]', kernel: 'NDArray[K,D,S,S]', offsets: 'N
     """
     def f(carry, x):
         img, kernel, offsets = x
-        out = sparse_conv2d(img, kernel, offsets, dense_kernel_size)
+        out = sparse_conv2d_(img, kernel, offsets, dense_kernel_size)
         return carry + out, None
     
     init = jnp.zeros((kernel.shape[0], img.shape[1], img.shape[2]))
