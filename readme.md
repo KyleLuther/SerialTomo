@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 from serialtomo import project
 
+# 30 tilts, height = width = 1000 pixels
 tilts = jnp.zeros((30,1000,1000))
 
 # sum of squared error between observed tilts and predicted tilts
