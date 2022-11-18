@@ -25,7 +25,7 @@ def project(volume: 'NDArray[D,H,W]', tilt_angles: 'NDArray[K,]', tilt_axes: 'ND
             'nearest', 'linear', or 'quadratic'
         
     Returns
-        projection: (height, width) projection
+        projection: (n_tilts, height, width) projection
         
     Notes
         projection is differentiable w.r.t. volume, thetas, and phis
@@ -33,9 +33,9 @@ def project(volume: 'NDArray[D,H,W]', tilt_angles: 'NDArray[K,]', tilt_axes: 'ND
     Example
         >>> depth, height, width = 32, 1000, 1000
         >>> volume = jnp.ones((depth, height, width))
-        >>> projection = project(x, theta=45.0, phi=22.0)
+        >>> projection = project(volume, tilt_angles=jnp.arange(-45.,46.,1.), tilt_axes=22.0)
         >>> print(projection.shape)
-        (1000,1000)
+        (91,1000,1000)
     
     Implementation notes
         This is equivalent to convolving a dense 3D kernel with the input.
