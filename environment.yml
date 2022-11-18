@@ -1,4 +1,4 @@
-name: tomography_new
+name: serialtomo
 channels:
   - defaults
   - conda-forge
@@ -15,4 +15,3 @@ dependencies:
   - tqdm
   - pip
   - stackview
-prefix: /usr/people/kluther/seungmount/research/kluther/packages/anaconda3/envs/tomography_new
