@@ -34,3 +34,6 @@ grad_tilt_axis = jax.grad(loss, argnums=2)
 ## Getting started
 Check out the colab notebook
 - [Simulating and Reconstructing a dual-tilt axes series](https://colab.research.google.com/drive/1-abF8gtyAbr59KIZNHtitKbP2HuGbft3?usp=sharing)
+
+## Warning
+The library is still a work in progress and substantial breaking changes are likely to occur.
