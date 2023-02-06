@@ -10,7 +10,7 @@ import time
 #############
 # Alignment #
 #############
-def alignstacks(stacks, ref_idx=None, downsample=10, n_features=3000, lowe_ratio=0.75, verbose=True, **kwargs):
+def alignstacks(stacks, ref_idx=None, downsample=10, n_features=3000, lowe_ratio=0.75, verbose=True, sift_kwargs=None, ransac_kwargs=None, tform='homography'):
     """ Aligns stacks with SIFT + RANSAC + projective transformation. 
         
     Args
@@ -37,7 +37,7 @@ def alignstacks(stacks, ref_idx=None, downsample=10, n_features=3000, lowe_ratio
     # register
     ref_indices = [s.shape[0]//2 for s in stacks]
     if ref_idx is None: ref_idx = len(ref_indices) // 2
-    tmats, tmats_between, tmats_within = register_stacks(stacks, ref_indices, ref_idx, downsample, n_features, lowe_ratio, verbose, **kwargs)
+    tmats, tmats_between, tmats_within = register_stacks(stacks, ref_indices, ref_idx, downsample, lowe_ratio, verbose, sift_kwargs, ransac_kwargs, tform)
     
     # transformt
     aligned = transform_stacks(stacks, tmats, verbose)
@@ -56,7 +56,7 @@ def alignstacks(stacks, ref_idx=None, downsample=10, n_features=3000, lowe_ratio
 ############
 # register #
 ############
-def register_stacks(stacks: '[KxHxW]', ref_indices=None, ref_idx=None, downsample=5, n_features=3000, lowe_ratio=0.75, verbose=True, **kwargs):
+def register_stacks(stacks: '[KxHxW]', ref_indices=None, ref_idx=None, downsample=5, lowe_ratio=0.75, verbose=True, sift_kwargs=None, ransac_kwargs=None, tform='homography'):
     """ Projective alignment of a stacks
     Returns:
         H: Kx3x3 array, each 3x3 matrix maps coordinates in image k to ref_idx
@@ -68,7 +68,7 @@ def register_stacks(stacks: '[KxHxW]', ref_indices=None, ref_idx=None, downsampl
         if len(stacks) > 1:
             H_between = []
             for i in range(len(stacks)-1):
-                H_, info_ = register_pair(stacks[i][ref_indices[i]], stacks[i+1][ref_indices[i+1]], downsample, n_features, lowe_ratio, **kwargs)
+                H_, info_ = register_pair(stacks[i][ref_indices[i]], stacks[i+1][ref_indices[i+1]], downsample, lowe_ratio, sift_kwargs, ransac_kwargs)
                 H_between.append(H_)
 
                 pbar.update()
@@ -85,7 +85,7 @@ def register_stacks(stacks: '[KxHxW]', ref_indices=None, ref_idx=None, downsampl
         for i in range(len(stacks)):
             H_within_ = []
             for j in range(len(stacks[i])-1):
-                H_, info_ = register_pair(stacks[i][j], stacks[i][j+1], downsample, n_features, lowe_ratio, **kwargs)
+                H_, info_ = register_pair(stacks[i][j], stacks[i][j+1], downsample, lowe_ratio, sift_kwargs, ransac_kwargs, tform)
                 H_within_.append(H_)
 
                 pbar.update()
@@ -100,7 +100,7 @@ def register_stacks(stacks: '[KxHxW]', ref_indices=None, ref_idx=None, downsampl
 
     return H_within_between, H_between, H_within
 
-def register_pair(ref: 'HxW uint8', mov: 'HxW uint8', downsample=10, n_features=3000, lowe_ratio=0.75, **kwargs):
+def register_pair(ref: 'HxW uint8', mov: 'HxW uint8', downsample=10, lowe_ratio=0.75, sift_kwargs=None, ransac_kwargs=None, tform='homography'):
     """ Projective registration of pair of images using SIFT features
     
     Args
@@ -122,7 +122,10 @@ def register_pair(ref: 'HxW uint8', mov: 'HxW uint8', downsample=10, n_features=
     im2 = normalize_img(ref)
     
     # detect and compute descriptors
-    fts = cv2.SIFT_create(nfeatures=n_features)
+    if sift_kwargs is None: sift_kwargs = {}
+    fts = cv2.SIFT_create(**sift_kwargs)
+    # fts = cv2.ORB_create(**sift_kwargs)
+    
     kp1, des1 = fts.detectAndCompute(im1, None)
     kp2, des2 = fts.detectAndCompute(im2, None)
     
@@ -154,7 +157,15 @@ def register_pair(ref: 'HxW uint8', mov: 'HxW uint8', downsample=10, n_features=
         points2[i, :] = kp2[match.trainIdx].pt    #gives index of the descriptor in the list of train descriptors
 
     try:
-        H, mask = cv2.findHomography(points1, points2, cv2.RANSAC, **kwargs)
+        if ransac_kwargs is None: ransac_kwargs = {}
+        H, mask = cv2.findHomography(points1, points2, cv2.RANSAC, **ransac_kwargs)
+        if tform == 'homography':
+            H, mask = cv2.findHomography(points1, points2, cv2.RANSAC, **ransac_kwargs)
+        elif tform == 'affine':
+            H, mask = cv2.estimateAffine2D(points1, points2, cv2.RANSAC, **ransac_kwargs)
+            H = np.concatenate([H,np.array([0.0,0.0,1.0])[None]])
+        else:
+            raise ValueError(f'Unrecognized tform: {tform}')
         mask = mask[:,0]
     except:
         H = np.eye(3)
