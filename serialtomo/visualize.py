@@ -1,4 +1,8 @@
-import plotly.graph_objects as go
+try:
+    import plotly.graph_objects as go
+except ModuleNotFoundError:
+    print('Warning: plotly not found. viewstack3d funcationality disabled') 
+    
 import numpy as np
 from skimage.transform import downscale_local_mean
 from tqdm import tqdm, trange
